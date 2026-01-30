@@ -27,6 +27,15 @@ export function getLevelConfig(level) {
 }
 
 export async function getCurrentLevel(userId) {
+  const [[userRow]] = await pool.query(
+    "SELECT current_level FROM users WHERE id = ?",
+    [userId]
+  );
+
+  if (userRow?.current_level) {
+    return userRow.current_level;
+  }
+
   const [sessions] = await pool.query(
     `
     SELECT level, status, level_cleared

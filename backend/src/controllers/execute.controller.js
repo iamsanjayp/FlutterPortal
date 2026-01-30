@@ -122,12 +122,23 @@ export async function executeTest(req, res) {
 
     const sessionStatus = await computeSessionStatus(sessionId);
 
+    const overallStatus = mappedTests.length
+      ? mappedTests.every(t => t.status === "PASS")
+        ? "PASS"
+        : "FAIL"
+      : "FAIL";
+
+    await pool.query(
+      `
+      INSERT INTO test_session_submissions
+      (test_session_id, user_id, problem_id, code, status, created_at)
+      VALUES (?, ?, ?, ?, ?, NOW())
+      `,
+      [sessionId, req.user.id, problemId, code, overallStatus]
+    );
+
     res.json({
-      status: mappedTests.length
-        ? mappedTests.every(t => t.status === "PASS")
-          ? "PASS"
-          : "FAIL"
-        : "FAIL",
+      status: overallStatus,
       tests: mappedTests,
       executionTimeMs: executionResult.executionTimeMs,
       sessionStatus,
@@ -218,7 +229,7 @@ function extractFunctionName(code) {
 
 function parseCustomInputWithTypes(customInput, paramTypes) {
   if (typeof customInput !== "string") {
-    const args = Array.isArray(customInput) ? customInput : [customInput];
+    const args = normalizeArgs(customInput, paramTypes);
     return coerceArgsByTypes(args, paramTypes);
   }
 
@@ -227,7 +238,7 @@ function parseCustomInputWithTypes(customInput, paramTypes) {
 
   try {
     const parsed = JSON.parse(trimmed);
-    const args = Array.isArray(parsed) ? parsed : [parsed];
+    const args = normalizeArgs(parsed, paramTypes);
     return coerceArgsByTypes(args, paramTypes);
   } catch {
     return coerceArgsByTypes([customInput], paramTypes);
@@ -281,7 +292,7 @@ function toDartLiteral(value) {
 function parseTestCaseInputWithTypes(input, paramTypes) {
   if (input === null || input === undefined) return [null];
   if (typeof input !== "string") {
-    const args = Array.isArray(input) ? input : [input];
+    const args = normalizeArgs(input, paramTypes);
     return coerceArgsByTypes(args, paramTypes);
   }
 
@@ -290,11 +301,18 @@ function parseTestCaseInputWithTypes(input, paramTypes) {
 
   try {
     const parsed = JSON.parse(trimmed);
-    const args = Array.isArray(parsed) ? parsed : [parsed];
+    const args = normalizeArgs(parsed, paramTypes);
     return coerceArgsByTypes(args, paramTypes);
   } catch {
     return coerceArgsByTypes([input], paramTypes);
   }
+}
+
+function normalizeArgs(parsed, paramTypes) {
+  if (paramTypes?.length === 1) {
+    return [parsed];
+  }
+  return Array.isArray(parsed) ? parsed : [parsed];
 }
 
 function extractParamTypes(code) {

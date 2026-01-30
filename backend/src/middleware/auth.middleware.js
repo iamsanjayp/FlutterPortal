@@ -14,12 +14,16 @@ export async function authenticate(req, res, next) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const [users] = await pool.query(
-      "SELECT id, role_id FROM users WHERE id = ? AND is_active = true",
+      "SELECT id, role_id, active_session_id FROM users WHERE id = ? AND is_active = true",
       [decoded.userId]
     );
 
     if (users.length === 0) {
       return res.status(401).json({ error: "Invalid user" });
+    }
+
+    if (!users[0].active_session_id || users[0].active_session_id !== decoded.sessionId) {
+      return res.status(401).json({ error: "Session expired" });
     }
 
     req.user = {

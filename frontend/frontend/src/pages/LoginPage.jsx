@@ -22,6 +22,34 @@ export default function LoginPage({ onLogin }) {
     }
   }
 
+  const isScheduleError = error?.includes("Login allowed only during scheduled tests");
+  const errorMessage = isScheduleError
+    ? "No active test right now. Please try again when the test window opens."
+    : error;
+
+  if (isScheduleError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+        <div className="w-full max-w-lg bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
+          <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xl font-semibold">
+            !
+          </div>
+          <h1 className="text-2xl font-semibold text-slate-800">No Active Test</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            The test portal is only available during scheduled slots. Please check back when the test window opens.
+          </p>
+          <button
+            type="button"
+            onClick={() => setError("")}
+            className="mt-6 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:border-sky-300"
+          >
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md bg-white rounded-lg shadow-sm border border-slate-100 p-6">
@@ -66,7 +94,11 @@ export default function LoginPage({ onLogin }) {
             />
           </div>
 
-          {error && <div className="text-sm text-red-600">{error}</div>}
+          {errorMessage && (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {errorMessage}
+            </div>
+          )}
 
           <button
             type="submit"

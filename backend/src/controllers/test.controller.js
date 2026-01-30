@@ -1,10 +1,59 @@
 import pool from "../config/db.js";
 import { getCurrentLevel, getLevelConfig, getNextLevel } from "../utils/level.js";
+import { getActiveSchedule, getScheduleForTime } from "../utils/schedule.js";
 
 export async function startTest(req, res) {
   const userId = req.user.id;
   const level = await getCurrentLevel(userId);
-  const { questionCount, durationMinutes } = getLevelConfig(level);
+  const { questionCount, durationMinutes: defaultDuration } = getLevelConfig(level);
+  const schedule = await getActiveSchedule();
+
+  if (!schedule) {
+    return res.status(403).json({ error: "Test portal is not scheduled" });
+  }
+
+  const durationMinutes = schedule.duration_minutes || defaultDuration;
+
+  const [[existingSession]] = await pool.query(
+    `
+    SELECT id, level, status, started_at, ended_at, duration_minutes
+    FROM test_sessions
+    WHERE user_id = ? AND status = 'IN_PROGRESS'
+    ORDER BY started_at DESC, id DESC
+    LIMIT 1
+    `,
+    [userId]
+  );
+
+  if (existingSession) {
+    return res.json({
+      sessionId: existingSession.id,
+      level: existingSession.level,
+      durationMinutes: existingSession.duration_minutes || schedule.duration_minutes || defaultDuration,
+      questionCount,
+      message: "Test already in progress",
+    });
+  }
+
+  const [[recentSession]] = await pool.query(
+    `
+    SELECT id, level, status, started_at
+    FROM test_sessions
+    WHERE user_id = ?
+    ORDER BY started_at DESC, id DESC
+    LIMIT 1
+    `,
+    [userId]
+  );
+
+  if (recentSession && schedule?.start_at && schedule?.end_at && recentSession.started_at) {
+    const startedAt = new Date(recentSession.started_at).getTime();
+    const startWindow = new Date(schedule.start_at).getTime();
+    const endWindow = new Date(schedule.end_at).getTime();
+    if (startedAt >= startWindow && startedAt <= endWindow && recentSession.status !== "IN_PROGRESS") {
+      return res.status(403).json({ error: "Test already submitted" });
+    }
+  }
 
   const conn = await pool.getConnection();
 
@@ -14,10 +63,10 @@ export async function startTest(req, res) {
     // 1. Create test session
     const [sessionResult] = await conn.query(
       `
-      INSERT INTO test_sessions (user_id, level, status, started_at, level_cleared)
-      VALUES (?, ?, 'IN_PROGRESS', NOW(), 0)
+      INSERT INTO test_sessions (user_id, level, status, started_at, level_cleared, duration_minutes)
+      VALUES (?, ?, 'IN_PROGRESS', NOW(), 0, ?)
       `,
-      [userId, level]
+      [userId, level, durationMinutes]
     );
 
     const sessionId = sessionResult.insertId;
@@ -69,6 +118,19 @@ export async function startTest(req, res) {
 export async function getTestData(req, res) {
   const sessionId = req.params.sessionId;
 
+  const [[session]] = await pool.query(
+    `
+    SELECT duration_minutes, started_at
+    FROM test_sessions
+    WHERE id = ?
+    `,
+    [sessionId]
+  );
+
+  const schedule = session?.started_at
+    ? await getScheduleForTime(session.started_at)
+    : null;
+
   const [questions] = await pool.query(
     `
     SELECT p.id, p.title, p.description, p.starter_code, tsq.order_no
@@ -101,7 +163,71 @@ export async function getTestData(req, res) {
     }));
   }
 
-  res.json({ questions });
+  res.json({
+    questions,
+    session: {
+      durationMinutes: session?.duration_minutes || null,
+      startedAt: session?.started_at || null,
+      scheduleEndAt: schedule?.end_at || null,
+    },
+    serverNow: new Date().toISOString(),
+  });
+}
+
+export async function getTestMeta(req, res) {
+  try {
+    const sessionId = req.params.sessionId;
+    const [[session]] = await pool.query(
+      `
+      SELECT duration_minutes, started_at, status, ignore_schedule_end
+      FROM test_sessions
+      WHERE id = ?
+      `,
+      [sessionId]
+    );
+
+    if (!session) {
+      return res.status(404).json({ error: "Session not found" });
+    }
+
+    const schedule = session?.started_at
+      ? await getScheduleForTime(session.started_at)
+      : null;
+
+    const now = new Date();
+    const scheduleEnd = schedule?.end_at ? new Date(schedule.end_at) : null;
+    const durationEnd = session?.started_at && session?.duration_minutes
+      ? new Date(new Date(session.started_at).getTime() + session.duration_minutes * 60 * 1000)
+      : null;
+
+    const shouldEndBySchedule = !session?.ignore_schedule_end && scheduleEnd && now >= scheduleEnd;
+    const shouldEndByDuration = durationEnd && now >= durationEnd;
+
+    if (session.status === "IN_PROGRESS" && (shouldEndBySchedule || shouldEndByDuration)) {
+      await pool.query(
+        `
+        UPDATE test_sessions
+        SET status = 'FAIL', ended_at = NOW(), level_cleared = 0
+        WHERE id = ?
+        `,
+        [sessionId]
+      );
+      session.status = "FAIL";
+    }
+
+    res.json({
+      session: {
+        durationMinutes: session?.duration_minutes || null,
+        startedAt: session?.started_at || null,
+        status: session?.status || null,
+        scheduleEndAt: schedule?.end_at || null,
+      },
+      serverNow: now.toISOString(),
+    });
+  } catch (err) {
+    console.error("Meta fetch error:", err);
+    res.status(500).json({ error: "Failed to load session meta" });
+  }
 }
 
 export async function finishTest(req, res) {
@@ -165,7 +291,16 @@ export async function finishTest(req, res) {
       [status, null, levelCleared ? 1 : 0, sessionId]
     );
 
+    if (status === "PASS" && levelCleared) {
+      const nextLevel = getNextLevel(session.level);
+      await pool.query(
+        "UPDATE users SET current_level = ? WHERE id = ?",
+        [nextLevel, userId]
+      );
+    }
+
     res.json({
+      status,
       totalPassed: passedCount,
       totalCount,
       levelCleared,

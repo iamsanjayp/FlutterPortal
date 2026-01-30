@@ -8,6 +8,7 @@ import problemRoutes from "./routes/problem.routes.js";
 import executeRoutes from "./routes/execute.routes.js";
 import protectedRoutes from "./routes/protected.routes.js";
 import testRoutes from "./routes/test.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
 
 
 
@@ -29,6 +30,7 @@ app.use("/api/test", testRoutes);
 app.use("/api/problems", problemRoutes);
 app.use("/api/execute", executeRoutes);
 app.use("/api", protectedRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.get("/", (req, res) => {
   res.json({ status: "Backend running 🚀" });

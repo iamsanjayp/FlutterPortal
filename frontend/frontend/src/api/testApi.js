@@ -29,6 +29,11 @@ export function fetchTest(sessionId) {
   return request(`${API_BASE}/test/${sessionId}`);
 }
 
+// 2b. Load session meta
+export function fetchTestMeta(sessionId) {
+  return request(`${API_BASE}/test/${sessionId}/meta`);
+}
+
 // 3. Execute code
 export function executeTest(payload) {
   return request(`${API_BASE}/execute/flutter`, {

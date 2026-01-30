@@ -1,6 +1,7 @@
 import express from "express";
 import passport from "passport";
 import { signAccessToken } from "../utils/jwt.js";
+import { getActiveSchedule } from "../utils/schedule.js";
 import pool from "../config/db.js";
 import bcrypt from "bcrypt";
 
@@ -27,6 +28,22 @@ router.get(
   }),
   async (req, res) => {
     try {
+      const [[dbUser]] = await pool.query(
+        "SELECT id, role_id, is_active FROM users WHERE id = ?",
+        [req.user.id]
+      );
+
+      if (!dbUser || dbUser.is_active !== 1) {
+        return res.status(403).json({ message: "Account disabled" });
+      }
+
+      if (dbUser.role_id !== 3) {
+        const schedule = await getActiveSchedule();
+        if (!schedule) {
+          return res.status(403).json({ message: "Login allowed only during scheduled tests" });
+        }
+      }
+
       // Generate JWT + session ID
       const { token, sessionId } = signAccessToken(req.user);
 
@@ -85,6 +102,13 @@ router.post("/login", async (req, res) => {
 
     if (!isValid) {
       return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    if (user.role_id !== 3) {
+      const schedule = await getActiveSchedule();
+      if (!schedule) {
+        return res.status(403).json({ error: "Login allowed only during scheduled tests" });
+      }
     }
 
     const { token, sessionId } = signAccessToken(user);

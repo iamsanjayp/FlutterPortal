@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { fetchTest, executeTest, executeCustom, finishTest, submitFeedback } from "../api/testApi";
+import { useEffect, useRef, useState } from "react";
+import { fetchTest, fetchTestMeta, executeTest, executeCustom, finishTest } from "../api/testApi";
 import CodeEditor from "../components/CodeEditor";
 import ProblemPanel from "../components/ProblemPanel";
 import ResultPanel from "../components/ResultPanel";
@@ -21,7 +21,7 @@ function buildInitialCodeMap(questions) {
   }, {});
 }
 
-export default function TestPage({ sessionId, durationMinutes = 60, level = "1A", onExit }) {
+export default function TestPage({ sessionId, level = "1A", durationMinutes, onLogout, onFinish }) {
   const [questions, setQuestions] = useState([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [code, setCode] = useState("");
@@ -35,10 +35,13 @@ export default function TestPage({ sessionId, durationMinutes = 60, level = "1A"
   const [customInput, setCustomInput] = useState("");
   const [customOutput, setCustomOutput] = useState("");
   const [customLoading, setCustomLoading] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(durationMinutes * 60);
-  const [finalResult, setFinalResult] = useState(null);
-  const [feedback, setFeedback] = useState("");
-  const [feedbackSaved, setFeedbackSaved] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState(null);
+  const [timerEndAt, setTimerEndAt] = useState(null);
+  const [sessionStartedAt, setSessionStartedAt] = useState(null);
+  const [finishing, setFinishing] = useState(false);
+  const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0);
+  const [autoFinished, setAutoFinished] = useState(false);
+  const autoFinishPendingRef = useRef(false);
 
   const activeQuestion = questions[activeIndex];
   const activeQuestionId = activeQuestion?.id;
@@ -60,13 +63,36 @@ export default function TestPage({ sessionId, durationMinutes = 60, level = "1A"
         setQuestions(normalized);
         setActiveIndex(0);
 
+        const sessionMeta = data.session || {};
+        const resolvedOffset = data.serverNow
+          ? Date.now() - new Date(data.serverNow).getTime()
+          : serverTimeOffsetMs;
+        if (data.serverNow) {
+          setServerTimeOffsetMs(resolvedOffset);
+        }
+        const serverDuration = sessionMeta.durationMinutes || durationMinutes || null;
+        const startedAt = sessionMeta.startedAt ? new Date(sessionMeta.startedAt).getTime() : Date.now();
+        setSessionStartedAt(startedAt);
+        if (serverDuration) {
+          const durationEndAt = startedAt + serverDuration * 60 * 1000;
+          const scheduleEndAt = sessionMeta.scheduleEndAt
+            ? new Date(sessionMeta.scheduleEndAt).getTime()
+            : null;
+          const endAt = scheduleEndAt ? Math.min(durationEndAt, scheduleEndAt) : durationEndAt;
+          setTimerEndAt(endAt);
+          const now = Date.now() - resolvedOffset;
+          setRemainingSeconds(Math.max(0, Math.floor((endAt - now) / 1000)));
+        } else {
+          setTimerEndAt(null);
+          setRemainingSeconds(null);
+        }
+
         const initialCodeMap = buildInitialCodeMap(normalized);
         setCodeByQuestionId(initialCodeMap);
         setCode(initialCodeMap[normalized[0]?.id] ?? "");
         setResultsByQuestionId({});
         setResults(null);
         setSessionVerdict(null);
-        setFinalResult(null);
       } catch (err) {
         if (!isMounted) return;
         setError(err?.message || "Failed to load the test.");
@@ -84,22 +110,61 @@ export default function TestPage({ sessionId, durationMinutes = 60, level = "1A"
   }, [sessionId]);
 
   useEffect(() => {
-    setTimeLeft(durationMinutes * 60);
-  }, [durationMinutes]);
+    if (!timerEndAt) return;
 
-  useEffect(() => {
-    if (finalResult) return;
-    if (timeLeft <= 0) {
-      handleFinish();
-      return;
-    }
-
-    const timerId = setInterval(() => {
-      setTimeLeft(prev => Math.max(prev - 1, 0));
+    const interval = setInterval(() => {
+      const now = Date.now() - serverTimeOffsetMs;
+      const next = Math.max(0, Math.floor((timerEndAt - now) / 1000));
+      setRemainingSeconds(next);
+      if (next <= 0) {
+        clearInterval(interval);
+        if (!autoFinished) {
+          confirmAutoFinish();
+        }
+      }
     }, 1000);
 
-    return () => clearInterval(timerId);
-  }, [timeLeft, finalResult]);
+    return () => clearInterval(interval);
+  }, [timerEndAt, serverTimeOffsetMs, autoFinished]);
+
+  useEffect(() => {
+    if (!sessionId || !sessionStartedAt) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetchTestMeta(sessionId);
+        const meta = res.session || {};
+        if (res.serverNow) {
+          setServerTimeOffsetMs(Date.now() - new Date(res.serverNow).getTime());
+        }
+        if (meta.status && meta.status !== "IN_PROGRESS" && !autoFinished) {
+          setSessionVerdict(meta.status);
+          setAutoFinished(true);
+          if (onFinish) {
+            onFinish({ status: meta.status, sessionId, auto: true });
+          }
+          return;
+        }
+        if (!meta.durationMinutes || !meta.startedAt) return;
+        const startedAt = new Date(meta.startedAt).getTime();
+        if (startedAt !== sessionStartedAt) {
+          setSessionStartedAt(startedAt);
+        }
+        const durationEndAt = startedAt + meta.durationMinutes * 60 * 1000;
+        const scheduleEndAt = meta.scheduleEndAt
+          ? new Date(meta.scheduleEndAt).getTime()
+          : null;
+        const endAt = scheduleEndAt ? Math.min(durationEndAt, scheduleEndAt) : durationEndAt;
+        if (endAt !== timerEndAt) {
+          setTimerEndAt(endAt);
+        }
+      } catch {
+        // silent
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [sessionId, sessionStartedAt, timerEndAt, onFinish, autoFinished]);
 
   function handleCodeChange(value) {
     setCode(value || "");
@@ -194,33 +259,70 @@ export default function TestPage({ sessionId, durationMinutes = 60, level = "1A"
   }
 
   async function handleFinish() {
-    if (!sessionId || finalResult) return;
+    if (!sessionId || finishing || autoFinished) return;
+    setFinishing(true);
+    setError("");
+    
+
     try {
       const res = await finishTest({ sessionId });
-      setFinalResult(res);
-    } catch (err) {
-      setError(err?.message || "Failed to finish test.");
-    }
-  }
-
-  async function handleSubmitFeedback() {
-    if (!sessionId) return;
-    try {
-      await submitFeedback({ sessionId, feedback });
-      setFeedbackSaved(true);
-      if (onExit) {
-        setTimeout(() => onExit(), 800);
+      setSessionVerdict(res?.status || null);
+      if (onFinish) {
+        onFinish(res);
       }
     } catch (err) {
-      setError(err?.message || "Failed to submit feedback.");
+      setError(err?.message || "Failed to finish test.");
+    } finally {
+      setFinishing(false);
     }
   }
 
-  const formattedTime = useMemo(() => {
-    const minutes = Math.floor(timeLeft / 60);
-    const seconds = timeLeft % 60;
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-  }, [timeLeft]);
+  async function confirmAutoFinish() {
+    if (!sessionId || autoFinished || autoFinishPendingRef.current) return;
+    autoFinishPendingRef.current = true;
+
+    try {
+      const res = await fetchTestMeta(sessionId);
+      const meta = res.session || {};
+      const now = res.serverNow
+        ? new Date(res.serverNow).getTime()
+        : Date.now();
+
+      if (meta.status && meta.status !== "IN_PROGRESS") {
+        setSessionVerdict(meta.status);
+        setAutoFinished(true);
+        if (onFinish) {
+          onFinish({ status: meta.status, sessionId, auto: true });
+        }
+        return;
+      }
+
+      if (meta.durationMinutes && meta.startedAt) {
+        const startedAt = new Date(meta.startedAt).getTime();
+        const durationEndAt = startedAt + meta.durationMinutes * 60 * 1000;
+        const scheduleEndAt = meta.scheduleEndAt
+          ? new Date(meta.scheduleEndAt).getTime()
+          : null;
+        const endAt = scheduleEndAt ? Math.min(durationEndAt, scheduleEndAt) : durationEndAt;
+        if (endAt > now) {
+          setTimerEndAt(endAt);
+          setRemainingSeconds(Math.max(0, Math.floor((endAt - now) / 1000)));
+          return;
+        }
+      }
+
+      await handleFinish();
+    } catch {
+      await handleFinish();
+    } finally {
+      autoFinishPendingRef.current = false;
+    }
+  }
+
+
+  const timeLabel = remainingSeconds !== null
+    ? `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`
+    : null;
 
   if (initializing) return <div>Loading test…</div>;
 
@@ -232,67 +334,21 @@ export default function TestPage({ sessionId, durationMinutes = 60, level = "1A"
     );
   }
 
-  if (finalResult) {
-    return (
-      <div className="min-h-screen bg-slate-50 px-6 py-8">
-        <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-sm border border-slate-100 p-6">
-          <h2 className="text-xl font-semibold text-slate-800">
-            Test Results
-          </h2>
-          <div className="mt-4 space-y-2 text-sm text-slate-700">
-            <div>
-              Level: <span className="font-semibold">{finalResult.level}</span>
-            </div>
-            <div>
-              Total Passed: <span className="font-semibold">{finalResult.totalPassed}</span>
-            </div>
-            <div>
-              Total Test Cases: <span className="font-semibold">{finalResult.totalCount}</span>
-            </div>
-            <div>
-              Level Clear: <span className={`font-semibold ${finalResult.levelCleared ? "text-green-600" : "text-red-600"}`}>
-                {finalResult.levelCleared ? "YES" : "NO"}
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div className="text-sm font-semibold text-slate-700">
-              Feedback
-            </div>
-            <textarea
-              className="mt-2 w-full h-24 resize-none rounded-md border border-slate-200 bg-white p-2 text-sm text-slate-700"
-              placeholder="Share your feedback about the test..."
-              value={feedback}
-              onChange={(event) => setFeedback(event.target.value)}
-            />
-            <button
-              onClick={handleSubmitFeedback}
-              className="mt-3 px-4 py-2 rounded-md bg-sky-500 text-white"
-              disabled={feedbackSaved}
-            >
-              {feedbackSaved ? "Feedback submitted" : "Submit Feedback"}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="h-screen grid grid-rows-[auto_1fr_auto] bg-slate-50">
       {/* Header */}
       <div className="px-6 py-4 bg-sky-500 text-white font-semibold flex items-center justify-between">
-        <span>Flutter Skill Test — Level {level}</span>
-        <div className="flex items-center gap-4 text-sm font-normal">
-          <span>
-            Time Left: <span className="font-semibold">{formattedTime}</span>
-          </span>
+        <div>Flutter Skill Test — Level {level}</div>
+        <div className="flex items-center gap-4 text-sm font-medium">
+          {timeLabel && (
+            <span className="rounded-full bg-white/20 px-3 py-1">Time Left: {timeLabel}</span>
+          )}
           <button
             onClick={handleFinish}
-            className="px-3 py-1 rounded-md border border-white/40 bg-white/10 text-white"
+            disabled={finishing}
+            className="rounded-full bg-white text-sky-600 px-4 py-1"
           >
-            Finish Test
+            {finishing ? "Finishing..." : "Finish Test"}
           </button>
         </div>
       </div>
