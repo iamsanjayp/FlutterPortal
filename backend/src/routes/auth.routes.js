@@ -3,6 +3,7 @@ import passport from "passport";
 import { signAccessToken } from "../utils/jwt.js";
 import { getActiveSchedule } from "../utils/schedule.js";
 import pool from "../config/db.js";
+import bcrypt from "bcrypt";
 
 const router = express.Router();
 const cookieMaxAgeMs = Number(process.env.JWT_COOKIE_MAX_AGE_MS) || 7 * 24 * 60 * 60 * 1000;
@@ -76,10 +77,72 @@ router.get(
 );
 
 /**
- * Username/password login removed (Google-only)
+ * Username/password login (LOCAL users)
  */
-router.post("/login", (req, res) => {
-  res.status(404).json({ error: "Password login disabled" });
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password required" });
+    }
+
+    const [[dbUser]] = await pool.query(
+      "SELECT id, role_id, is_active, active_session_id, auth_provider, password_hash FROM users WHERE email = ?",
+      [email]
+    );
+
+    if (!dbUser) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    if (dbUser.is_active !== 1) {
+      return res.status(403).json({ error: "Account disabled" });
+    }
+
+    if (dbUser.active_session_id) {
+      return res.status(409).json({ error: "Account already active on another device" });
+    }
+
+    if (dbUser.auth_provider && dbUser.auth_provider !== "LOCAL") {
+      return res.status(403).json({ error: "Use Google login for this account" });
+    }
+
+    if (!dbUser.password_hash) {
+      return res.status(403).json({ error: "Password login not configured" });
+    }
+
+    const match = await bcrypt.compare(password, dbUser.password_hash);
+    if (!match) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    if (dbUser.role_id === 1) {
+      const schedule = await getActiveSchedule();
+      if (!schedule) {
+        return res.status(403).json({ error: "Login allowed only during scheduled tests" });
+      }
+    }
+
+    const { token, sessionId } = signAccessToken(dbUser);
+
+    await pool.query(
+      "UPDATE users SET active_session_id = ? WHERE id = ?",
+      [sessionId, dbUser.id]
+    );
+
+    res.cookie("access_token", token, {
+      httpOnly: true,
+      secure: false,
+      sameSite: "lax",
+      path: "/",
+      maxAge: cookieMaxAgeMs,
+    });
+
+    res.json({ message: "Login successful" });
+  } catch (err) {
+    console.error("Password login error:", err);
+    res.status(500).json({ error: "Login failed" });
+  }
 });
 
 /**

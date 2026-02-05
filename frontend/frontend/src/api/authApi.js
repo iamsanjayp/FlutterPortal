@@ -31,3 +31,10 @@ export function logout() {
 export function startGoogleLogin() {
   window.location.href = `${API_BASE}/auth/google`;
 }
+
+export function loginWithPassword(payload) {
+  return request(`${API_BASE}/auth/login`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}

@@ -58,6 +58,12 @@ CREATE TABLE `users` (
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
 INSERT INTO `users` VALUES (1,'SANJAY P','sanjayp.cs24@bitsathy.ac.in','2024UCS1294','7376241CS361','','GOOGLE',NULL,1,1,'2026-01-21 09:17:39',NULL,'1A'),(2,'sanjay','itsanjayp@gmail.com',NULL,NULL,NULL,'GOOGLE',NULL,1,1,'2026-01-22 05:54:14',NULL,'1B'),(3,'DONNN','itsanjayp2@gmail.com',NULL,NULL,'CS45546','GOOGLE',NULL,2,1,'2026-01-23 04:14:14',NULL,'1C'),(5,'Lalithkumar Pallipalayam Ravikumar','lalithkumarpallipalayam.cs24@bitsathy.ac.in','','','CS11088','GOOGLE',NULL,2,1,'2026-02-04 06:29:02','af5957b0-c5c3-4d53-aac0-514898e15da1',NULL),(10,'Sanjay Pasupatheeswaran','sanjay006p@gmail.com',NULL,NULL,'PCDP1','GOOGLE',NULL,3,1,'2026-02-04 06:36:43','660b73eb-6cba-40ea-ac83-227ea94d2846',NULL),(11,'SELVAGANAPATHY P','selvaganapathyp.ad24@bitsathy.ac.in','2024UAD1189','7376242AD297',NULL,'GOOGLE',NULL,1,1,'2026-02-04 06:52:49',NULL,NULL),(12,'KIRUTHICK PS','kiruthikps.cs24@bitsathy.ac.in','2024UCS1274','7376241CS246',NULL,'GOOGLE',NULL,1,1,'2026-02-04 06:52:49',NULL,NULL),(13,'KARTHEEPAN JK','kartheepanjk.al24@bitsathy.ac.in','2024UAL1101','7376242AL137',NULL,'GOOGLE',NULL,1,1,'2026-02-04 06:52:49',NULL,NULL),(14,'Nishaanth Mohanasundaram','nishaanthmohanasundaram.al24@bitsathy.ac.in','2024UAL1100','7376242AL160',NULL,'GOOGLE',NULL,1,1,'2026-02-04 06:52:49',NULL,NULL),(15,'HARI PRANAV MURUGAN M','haripranavmuruganm.al24@bitsathy.ac.in','2024UAL1090','7376242AL130',NULL,'GOOGLE',NULL,1,1,'2026-02-04 06:52:49',NULL,NULL),(16,'RITHIK P','rithikp.al24@bitsathy.ac.in','2024UAL1092','7376242AL177',NULL,'GOOGLE',NULL,1,1,'2026-02-04 06:52:49',NULL,NULL),(17,'K S RAGUL RAKAV','ksragulrakav.cs24@bitsathy.ac.in','2024UCS1344','7376241CS221',NULL,'GOOGLE',NULL,1,1,'2026-02-04 06:52:49',NULL,NULL);
+-- Default LOCAL users for password login
+INSERT INTO `users` (`full_name`,`email`,`enrollment_no`,`roll_no`,`staff_id`,`auth_provider`,`password_hash`,`role_id`,`is_active`,`current_level`)
+VALUES
+('Local Admin','admin@local.test',NULL,NULL,'ADMIN001','LOCAL','$2b$10$LffzEQIeiNLsLW0WsNlj4enYRWzB2PTsNL1icbS5ZFbAb4Ne8XRNe',3,1,NULL),
+('Local Faculty','faculty@local.test',NULL,NULL,'FAC001','LOCAL','$2b$10$2DgdVK1GjDiiNyTVhihZGODtgsVyM4aRWAF3hY/mfctUfQeskFARy',2,1,NULL),
+('Local Student','student@local.test','LOCALSTU001','ROLL001',NULL,'LOCAL','$2b$10$nxxAkGR3djo9AGqR/K90GuEXOXVLbAn9pe6I06fglYLzOhzlKhDhy',1,1,'1A');
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

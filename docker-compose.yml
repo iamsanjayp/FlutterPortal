@@ -1,0 +1,65 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mobiledev-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: mobiledev_portal
+      MYSQL_USER: portal
+      MYSQL_PASSWORD: sanjay@2006
+      MYSQL_ROOT_PASSWORD: sanjay@2006
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  flutter-runner:
+    build:
+      context: ./backend
+      dockerfile: flutter_runner/Dockerfile
+    image: flutter-runner:latest
+
+  backend:
+    build:
+      context: ./backend
+    container_name: mobiledev-backend
+    restart: unless-stopped
+    depends_on:
+      - mysql
+      - flutter-runner
+    environment:
+      PORT: 5000
+      DB_HOST: mysql
+      DB_USER: portal
+      DB_PASSWORD: sanjay@2006
+      DB_NAME: mobiledev_portal
+      JWT_SECRET: change_me
+      JWT_EXPIRY: 7d
+      JWT_COOKIE_MAX_AGE_MS: 604800000
+      NODE_ENV: production
+      FRONTEND_URL: http://10.150.20.159:5173
+      FRONTEND_URLS: http://10.150.20.159:5173
+      GOOGLE_CLIENT_ID: change_me
+      GOOGLE_CLIENT_SECRET: change_me
+      GOOGLE_CALLBACK_URL: http://10.150.20.159:5000/auth/google/callback
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  frontend:
+    build:
+      context: ./frontend/frontend
+      args:
+        VITE_API_BASE: http://10.150.20.159:5000
+        VITE_API_ORIGIN: http://10.150.20.159:5000
+    container_name: mobiledev-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  mysql_data:

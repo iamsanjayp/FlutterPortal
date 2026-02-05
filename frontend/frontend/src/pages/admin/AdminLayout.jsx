@@ -53,15 +53,15 @@ export default function AdminLayout({ user, onLogout }) {
             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center shadow-md">
               <span className="text-white font-bold text-lg">PC</span>
             </div>
-            <h1 className="text-xl font-semibold text-gray-800">PCDP Admin</h1>
+            <h1 className="text-xl font-semibold text-gray-800">PS Flutter Admin Portal</h1>
           </div>
 
           <div className="flex items-center gap-4">
             {/* Admin Profile */}
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <p className="text-sm font-medium text-gray-700">{user?.roll_no || '737624ICS361'}</p>
-                <p className="text-xs text-gray-500">{user?.full_name || 'SANJAY P'}</p>
+                <p className="text-sm font-medium text-gray-700">{user?.roll_no || user?.staff_id ||'ADMIN'}</p>
+                <p className="text-xs text-gray-500">{user?.full_name || 'ADMIN_UNKNOWN'}</p>
               </div>
               <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-md">
                 <span className="text-white font-medium text-sm">
