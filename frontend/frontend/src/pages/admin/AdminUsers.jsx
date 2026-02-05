@@ -1,12 +1,26 @@
 import { useState, useEffect } from 'react';
-import { Search, UserX, User, Mail, CheckCircle, XCircle } from 'lucide-react';
-import { fetchStudents, updateStudentStatus, updateStudentLevel } from '../../api/adminApi';
+import { Search, UserX, User, Mail, CheckCircle, XCircle, Plus } from 'lucide-react';
+import { fetchStudents, updateStudentStatus, updateStudentLevel, createUser, updateUser, bulkImportUsers } from '../../api/adminApi';
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState([]);
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editData, setEditData] = useState(null);
+  const [bulkFile, setBulkFile] = useState(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [newUser, setNewUser] = useState({
+    fullName: '',
+    email: '',
+    authProvider: 'GOOGLE',
+    password: '',
+    enrollmentNo: '',
+    rollNo: '',
+  });
   const levels = ["1A", "1B", "1C", "2A", "2B", "2C", "3A", "3B", "3C", "4A", "4B", "4C", "5A", "5B", "5C"];
 
   useEffect(() => {
@@ -111,16 +125,223 @@ export default function AdminUsers() {
     }
   }
 
+  async function handleCreateUser(e) {
+    e.preventDefault();
+    try {
+      setCreating(true);
+      await createUser({
+        fullName: newUser.fullName,
+        email: newUser.email,
+        roleId: 1,
+        authProvider: newUser.authProvider,
+        password: newUser.authProvider === 'LOCAL' ? newUser.password : undefined,
+        enrollmentNo: newUser.enrollmentNo,
+        rollNo: newUser.rollNo,
+      });
+      setShowCreate(false);
+      setNewUser({
+        fullName: '',
+        email: '',
+        authProvider: 'GOOGLE',
+        password: '',
+        enrollmentNo: '',
+        rollNo: '',
+      });
+      await loadUsers(searchTerm);
+    } catch (err) {
+      alert('Failed to create user: ' + err.message);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleBulkImport() {
+    if (!bulkFile) {
+      alert('Choose a file first');
+      return;
+    }
+
+    try {
+      setBulkLoading(true);
+      await bulkImportUsers(bulkFile);
+      setBulkFile(null);
+      await loadUsers(searchTerm);
+      alert('Bulk import completed');
+    } catch (err) {
+      alert('Bulk import failed: ' + err.message);
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
+  function openEdit(user) {
+    setEditingUser(user);
+    setEditData({
+      fullName: user.full_name || '',
+      email: user.email || '',
+      enrollmentNo: user.enrollment_no || '',
+      rollNo: user.roll_no || '',
+      authProvider: user.auth_provider || 'GOOGLE',
+      password: '',
+      isActive: Boolean(user.is_active),
+    });
+  }
+
+  async function handleUpdateUser(e) {
+    e.preventDefault();
+    if (!editingUser) return;
+
+    try {
+      setCreating(true);
+      await updateUser(editingUser.id, {
+        fullName: editData.fullName,
+        email: editData.email,
+        enrollmentNo: editData.enrollmentNo,
+        rollNo: editData.rollNo,
+        roleId: 1,
+        authProvider: editData.authProvider,
+        password: editData.authProvider === 'LOCAL' ? editData.password : undefined,
+        isActive: editData.isActive,
+      });
+      setEditingUser(null);
+      setEditData(null);
+      await loadUsers(searchTerm);
+    } catch (err) {
+      alert('Failed to update user: ' + err.message);
+    } finally {
+      setCreating(false);
+    }
+  }
+
   const filteredUsers = users;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Users</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage student accounts and permissions</p>
+          <h1 className="text-2xl font-bold text-gray-800">Students</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage student accounts and levels</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 cursor-pointer">
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
+            />
+            Bulk Import
+          </label>
+          <button
+            onClick={handleBulkImport}
+            disabled={bulkLoading}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+          >
+            {bulkLoading ? 'Importing...' : 'Upload'}
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add User
+          </button>
         </div>
       </div>
+
+      {showCreate && (
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Create User</h3>
+          <form onSubmit={handleCreateUser} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={newUser.fullName}
+                  onChange={(e) => setNewUser({ ...newUser, fullName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Auth Provider</label>
+                <select
+                  value={newUser.authProvider}
+                  onChange={(e) => setNewUser({ ...newUser, authProvider: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="GOOGLE">Google</option>
+                  <option value="LOCAL">Local Password</option>
+                </select>
+              </div>
+              {newUser.authProvider === 'LOCAL' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <input
+                    type="password"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Enrollment No</label>
+                <input
+                  type="text"
+                  value={newUser.enrollmentNo}
+                  onChange={(e) => setNewUser({ ...newUser, enrollmentNo: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Roll No</label>
+                <input
+                  type="text"
+                  value={newUser.rollNo}
+                  onChange={(e) => setNewUser({ ...newUser, rollNo: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={creating}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {creating ? 'Creating...' : 'Create User'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreate(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Search & Actions Bar */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
@@ -164,28 +385,28 @@ export default function AdminUsers() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard 
-          title="Total Users" 
+          title="Total Students" 
           value={users.length.toString()}
           icon={User}
           color="blue"
         />
         <StatCard 
-          title="Students" 
-          value={users.length.toString()}
-          icon={User}
-          color="purple"
-        />
-        <StatCard 
-          title="Active Users" 
+          title="Active Students" 
           value={users.filter(u => u.is_active).length.toString()}
           icon={CheckCircle}
           color="green"
         />
         <StatCard 
-          title="Blocked Users" 
+          title="Blocked Students" 
           value={users.filter(u => !u.is_active).length.toString()}
           icon={XCircle}
           color="red"
+        />
+        <StatCard 
+          title="Level Assigned" 
+          value={users.filter(u => u.current_level).length.toString()}
+          icon={User}
+          color="purple"
         />
       </div>
 
@@ -236,6 +457,7 @@ export default function AdminUsers() {
                 <td className="px-6 py-4 text-sm text-gray-600">
                   <div className="font-mono">{user.roll_no || '-'}</div>
                   <div className="text-xs text-gray-400">{user.enrollment_no || ''}</div>
+                  <div className="text-xs text-gray-500">{user.staff_id ? `Staff ID: ${user.staff_id}` : ''}</div>
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -264,14 +486,22 @@ export default function AdminUsers() {
                   </span>
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <button
-                    onClick={() => handleToggleUser(user)}
-                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-md transition-colors text-sm ${
-                      user.is_active ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'
-                    }`}
-                  >
-                    {user.is_active ? 'Block' : 'Unblock'}
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => openEdit(user)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-slate-50 text-slate-700 hover:bg-slate-100 transition-colors text-sm"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleToggleUser(user)}
+                      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-md transition-colors text-sm ${
+                        user.is_active ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'
+                      }`}
+                    >
+                      {user.is_active ? 'Block' : 'Unblock'}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -286,6 +516,104 @@ export default function AdminUsers() {
           </div>
         )}
       </div>
+
+      {editingUser && editData && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Edit User</h3>
+            <form onSubmit={handleUpdateUser} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    value={editData.fullName}
+                    onChange={(e) => setEditData({ ...editData, fullName: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={editData.email}
+                    onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Auth Provider</label>
+                  <select
+                    value={editData.authProvider}
+                    onChange={(e) => setEditData({ ...editData, authProvider: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="GOOGLE">Google</option>
+                    <option value="LOCAL">Local Password</option>
+                  </select>
+                </div>
+                {editData.authProvider === 'LOCAL' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                    <input
+                      type="password"
+                      value={editData.password}
+                      onChange={(e) => setEditData({ ...editData, password: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Enrollment No</label>
+                  <input
+                    type="text"
+                    value={editData.enrollmentNo}
+                    onChange={(e) => setEditData({ ...editData, enrollmentNo: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Roll No</label>
+                  <input
+                    type="text"
+                    value={editData.rollNo}
+                    onChange={(e) => setEditData({ ...editData, rollNo: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  {creating ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingUser(null);
+                    setEditData(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

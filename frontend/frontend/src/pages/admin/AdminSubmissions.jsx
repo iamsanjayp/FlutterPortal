@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Search, Code, CheckCircle, XCircle, AlertCircle, Eye, FileText } from 'lucide-react';
-import { fetchSchedules, fetchSubmissions, updateSubmissionStatus } from '../../api/adminApi';
+import { fetchSchedules, fetchSubmissions, updateSubmissionStatus, deleteSubmission, reinstateSession } from '../../api/adminApi';
+
+const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || import.meta.env.VITE_API_BASE || "http://localhost:5000";
 
 export default function AdminSubmissions() {
   const [submissions, setSubmissions] = useState([]);
@@ -34,7 +36,7 @@ export default function AdminSubmissions() {
   async function loadSubmissions(scheduleId) {
     try {
       setLoading(true);
-      const data = await fetchSubmissions({ scheduleId });
+      const data = await fetchSubmissions({ scheduleId, assessmentType: "TEST_CASE" });
       setSubmissions(data.submissions || []);
     } catch (err) {
       console.error('Failed to load submissions:', err);
@@ -65,6 +67,34 @@ export default function AdminSubmissions() {
     }
   }
 
+  async function handleDeleteSubmission(submission) {
+    if (!confirm('Delete this submission? This will reopen the session if it is the only submission.')) {
+      return;
+    }
+
+    try {
+      await deleteSubmission(submission.id);
+      setSelectedSubmission(null);
+      loadSubmissions(selectedScheduleId || undefined);
+    } catch (err) {
+      alert('Failed to delete submission: ' + err.message);
+    }
+  }
+
+  async function handleReinstateSession(submission) {
+    if (!confirm('Reinstate the entire session? This clears all submissions for this session.')) {
+      return;
+    }
+
+    try {
+      await reinstateSession(submission.test_session_id);
+      setSelectedSubmission(null);
+      loadSubmissions(selectedScheduleId || undefined);
+    } catch (err) {
+      alert('Failed to reinstate session: ' + err.message);
+    }
+  }
+
   const filteredSubmissions = submissions.filter(sub => {
     const search = searchTerm.toLowerCase();
     const matchesSearch = !searchTerm ||
@@ -84,6 +114,8 @@ export default function AdminSubmissions() {
         submission={selectedSubmission}
         onClose={() => setSelectedSubmission(null)}
         onUpdateSubmission={handleUpdateSubmission}
+        onDeleteSubmission={handleDeleteSubmission}
+        onReinstateSession={handleReinstateSession}
       />
     );
   }
@@ -92,8 +124,8 @@ export default function AdminSubmissions() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Submissions & Review</h1>
-          <p className="text-sm text-gray-500 mt-1">Review all student submissions and test results</p>
+          <h1 className="text-2xl font-bold text-gray-800">Code Review - Coding Test</h1>
+          <p className="text-sm text-gray-500 mt-1">Review latest coding test submissions and results</p>
         </div>
       </div>
 
@@ -210,7 +242,7 @@ export default function AdminSubmissions() {
                       ? 'bg-red-100 text-red-700'
                       : 'bg-yellow-100 text-yellow-700'
                   }`}>
-                    {sub.status}
+                    {sub.status === 'AWAITING_MANUAL' ? 'Awaiting Manual' : sub.status}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-right">
@@ -239,7 +271,7 @@ export default function AdminSubmissions() {
   );
 }
 
-function SubmissionDetail({ submission, onClose, onUpdateSubmission }) {
+function SubmissionDetail({ submission, onClose, onUpdateSubmission, onDeleteSubmission, onReinstateSession }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -286,9 +318,11 @@ function SubmissionDetail({ submission, onClose, onUpdateSubmission }) {
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                   submission.status === 'PASS'
                     ? 'bg-green-100 text-green-700'
-                    : 'bg-red-100 text-red-700'
+                    : submission.status === 'FAIL'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-yellow-100 text-yellow-700'
                 }`}>
-                  {submission.status}
+                  {submission.status === 'AWAITING_MANUAL' ? 'Awaiting Manual' : submission.status}
                 </span>
               </div>
 
@@ -298,16 +332,48 @@ function SubmissionDetail({ submission, onClose, onUpdateSubmission }) {
                   {new Date(submission.created_at).toLocaleString()}
                 </span>
               </div>
+              {typeof submission.score === 'number' && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Score</span>
+                  <span className="text-sm font-medium text-gray-800">{submission.score}%</span>
+                </div>
+              )}
+              {typeof submission.match_percent === 'number' && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Match %</span>
+                  <span className="text-sm font-medium text-gray-800">{submission.match_percent}%</span>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Test Cases</h3>
-            
-            <div className="text-sm text-gray-500">
-              Detailed test case results are not available for this submission yet.
+          {(submission.reference_image_url || submission.preview_image_url) && (
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">UI Comparison</h3>
+              <div className="space-y-4">
+                {submission.reference_image_url && (
+                  <div>
+                    <div className="text-xs uppercase text-gray-500 mb-2">Reference</div>
+                    <img
+                      src={`${API_ORIGIN}${submission.reference_image_url}`}
+                      alt="Reference"
+                      className="w-full rounded-md border border-gray-200 object-contain"
+                    />
+                  </div>
+                )}
+                {submission.preview_image_url && (
+                  <div>
+                    <div className="text-xs uppercase text-gray-500 mb-2">Student Output</div>
+                    <img
+                      src={`${API_ORIGIN}${submission.preview_image_url}`}
+                      alt="Preview"
+                      className="w-full rounded-md border border-gray-200 object-contain"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Manual Override</h3>
@@ -326,6 +392,18 @@ function SubmissionDetail({ submission, onClose, onUpdateSubmission }) {
               >
                 <XCircle className="w-4 h-4" />
                 Mark as Failed
+              </button>
+              <button
+                onClick={() => onDeleteSubmission(submission)}
+                className="w-full px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Delete Submission
+              </button>
+              <button
+                onClick={() => onReinstateSession(submission)}
+                className="w-full px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors"
+              >
+                Reinstate Session
               </button>
             </div>
           </div>

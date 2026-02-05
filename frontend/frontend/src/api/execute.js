@@ -1,6 +1,7 @@
 export async function executeFlutter({ problemId, code }) {
+  const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:5000";
   const response = await fetch(
-    "http://localhost:5000/api/execute/flutter",
+    `${apiBase}/api/execute/flutter`,
     {
       method: "POST",
       headers: {

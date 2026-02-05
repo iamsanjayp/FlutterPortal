@@ -3,7 +3,8 @@ import { Plus, Edit, Calendar, Clock } from 'lucide-react';
 import { 
   fetchSchedules, 
   createSchedule, 
-  updateSchedule 
+  updateSchedule,
+  fetchTeachers
 } from '../../api/adminApi';
 
 export default function AdminTestSlots() {
@@ -11,9 +12,11 @@ export default function AdminTestSlots() {
   const [showForm, setShowForm] = useState(false);
   const [editingSlot, setEditingSlot] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [teachers, setTeachers] = useState([]);
 
   useEffect(() => {
     loadSlots();
+    loadTeachers();
   }, []);
 
   async function loadSlots() {
@@ -25,6 +28,15 @@ export default function AdminTestSlots() {
       console.error('Failed to load test slots:', err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadTeachers() {
+    try {
+      const data = await fetchTeachers();
+      setTeachers(data.students || []);
+    } catch (err) {
+      console.error('Failed to load teachers:', err);
     }
   }
 
@@ -72,16 +84,17 @@ export default function AdminTestSlots() {
       {showForm && (
         <SlotForm 
           slot={editingSlot}
+          teachers={teachers}
           onClose={handleFormClose}
         />
       )}
 
-      <SlotsTable 
-        slots={slots}
-        onEdit={handleEdit}
-        onToggleActive={handleToggleActive}
-        loading={loading}
-      />
+        <SlotsTable 
+          slots={slots}
+          onEdit={handleEdit}
+          onToggleActive={handleToggleActive}
+          loading={loading}
+        />
     </div>
   );
 }
@@ -105,6 +118,9 @@ function SlotsTable({ slots, onEdit, onToggleActive, loading }) {
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Time</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">End Time</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Live Teacher</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code Reviewer</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">UI Reviewer</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
           </tr>
@@ -153,6 +169,15 @@ function SlotsTable({ slots, onEdit, onToggleActive, loading }) {
                     {slot.duration_minutes || 0} min
                   </div>
                 </td>
+                <td className="px-6 py-4 text-sm text-gray-600">
+                  {slot.live_teacher_name || '-'}
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-600">
+                  {slot.code_reviewer_name || '-'}
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-600">
+                  {slot.ui_reviewer_name || '-'}
+                </td>
                 <td className="px-6 py-4">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                     isActive
@@ -198,13 +223,16 @@ function SlotsTable({ slots, onEdit, onToggleActive, loading }) {
   );
 }
 
-function SlotForm({ slot, onClose }) {
+function SlotForm({ slot, onClose, teachers }) {
   const [formData, setFormData] = useState({
     name: slot?.name || '',
     startAt: slot?.start_at ? new Date(slot.start_at).toISOString().slice(0, 16) : '',
     endAt: slot?.end_at ? new Date(slot.end_at).toISOString().slice(0, 16) : '',
     durationMinutes: slot?.duration_minutes || 30,
     isActive: slot?.is_active ? true : false,
+    liveTeacherId: slot?.live_teacher_id || '',
+    codeReviewerId: slot?.code_reviewer_id || '',
+    uiReviewerId: slot?.ui_reviewer_id || '',
   });
   const [loading, setLoading] = useState(false);
 
@@ -278,6 +306,54 @@ function SlotForm({ slot, onClose }) {
             min="1"
             required
           />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Live Test Teacher</label>
+            <select
+              value={formData.liveTeacherId}
+              onChange={(e) => setFormData({ ...formData, liveTeacherId: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="">Unassigned</option>
+              {teachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>
+                  {teacher.full_name} ({teacher.email})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Code Review Teacher</label>
+            <select
+              value={formData.codeReviewerId}
+              onChange={(e) => setFormData({ ...formData, codeReviewerId: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="">Unassigned</option>
+              {teachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>
+                  {teacher.full_name} ({teacher.email})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">UI Review Teacher</label>
+            <select
+              value={formData.uiReviewerId}
+              onChange={(e) => setFormData({ ...formData, uiReviewerId: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="">Unassigned</option>
+              {teachers.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>
+                  {teacher.full_name} ({teacher.email})
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">

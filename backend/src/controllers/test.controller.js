@@ -1,11 +1,11 @@
 import pool from "../config/db.js";
-import { getCurrentLevel, getLevelConfig, getNextLevel } from "../utils/level.js";
+import { getCurrentLevel, getLevelConfig, getNextLevel, setCurrentLevel } from "../utils/level.js";
 import { getActiveSchedule, getScheduleForTime } from "../utils/schedule.js";
 
 export async function startTest(req, res) {
   const userId = req.user.id;
   const level = await getCurrentLevel(userId);
-  const { questionCount, durationMinutes: defaultDuration } = getLevelConfig(level);
+  const { questionCount, durationMinutes: defaultDuration, assessmentType, passThreshold } = await getLevelConfig(level);
   const schedule = await getActiveSchedule();
 
   if (!schedule) {
@@ -31,6 +31,8 @@ export async function startTest(req, res) {
       level: existingSession.level,
       durationMinutes: existingSession.duration_minutes || schedule.duration_minutes || defaultDuration,
       questionCount,
+      assessmentType,
+      passThreshold,
       message: "Test already in progress",
     });
   }
@@ -71,16 +73,58 @@ export async function startTest(req, res) {
 
     const sessionId = sessionResult.insertId;
 
-    // 2. Pick random problems
-    const [problems] = await conn.query(
+    // 2. Pick random problems (avoid recent repeats for the same student)
+    const recentLimit = 30;
+    const [recentRows] = await conn.query(
+      `
+      SELECT tsq.problem_id
+      FROM test_session_questions tsq
+      JOIN test_sessions ts ON ts.id = tsq.test_session_id
+      WHERE ts.user_id = ?
+      ORDER BY ts.started_at DESC, ts.id DESC
+      LIMIT ?
+      `,
+      [userId, recentLimit]
+    );
+
+    const recentIds = Array.from(new Set(recentRows.map(r => r.problem_id)));
+    const recentPlaceholders = recentIds.map(() => "?").join(", ");
+
+    const [freshProblems] = await conn.query(
       `
       SELECT id FROM problems
       WHERE level = ? AND is_active = true
+      ${recentIds.length ? `AND id NOT IN (${recentPlaceholders})` : ""}
       ORDER BY RAND()
       LIMIT ?
       `,
-      [level, questionCount]
+      recentIds.length
+        ? [level, ...recentIds, questionCount]
+        : [level, questionCount]
     );
+
+    let problems = freshProblems;
+
+    if (problems.length < questionCount) {
+      const remaining = questionCount - problems.length;
+      const excludeIds = Array.from(
+        new Set([...recentIds, ...problems.map(p => p.id)])
+      );
+      const excludePlaceholders = excludeIds.map(() => "?").join(", ");
+      const [fallback] = await conn.query(
+        `
+        SELECT id FROM problems
+        WHERE level = ? AND is_active = true
+        ${excludeIds.length ? `AND id NOT IN (${excludePlaceholders})` : ""}
+        ORDER BY RAND()
+        LIMIT ?
+        `,
+        excludeIds.length
+          ? [level, ...excludeIds, remaining]
+          : [level, remaining]
+      );
+      problems = problems.concat(fallback);
+    }
 
     if (problems.length < questionCount) {
       throw new Error("Not enough problems configured");
@@ -105,6 +149,8 @@ export async function startTest(req, res) {
       level,
       durationMinutes,
       questionCount,
+      assessmentType,
+      passThreshold,
       message: "Test session started",
     });
   } catch (err) {
@@ -131,9 +177,16 @@ export async function getTestData(req, res) {
     ? await getScheduleForTime(session.started_at)
     : null;
 
+  const [[levelRow]] = await pool.query(
+    "SELECT level FROM test_sessions WHERE id = ?",
+    [sessionId]
+  );
+  const level = levelRow?.level || "1A";
+  const { assessmentType } = await getLevelConfig(level);
+
   const [questions] = await pool.query(
     `
-    SELECT p.id, p.title, p.description, p.starter_code, tsq.order_no
+    SELECT p.id, p.title, p.description, p.starter_code, p.ui_required_widgets, tsq.order_no
     FROM test_session_questions tsq
     JOIN problems p ON p.id = tsq.problem_id
     WHERE tsq.test_session_id = ?
@@ -143,28 +196,41 @@ export async function getTestData(req, res) {
   );
 
   for (const q of questions) {
-    const [cases] = await pool.query(
-      `
-      SELECT id, input, expected_output, is_hidden, order_no
-      FROM test_cases
-      WHERE problem_id = ?
-      ORDER BY order_no
-      `,
-      [q.id]
-    );
+    const isTestCase = assessmentType === "TEST_CASE";
+    q.uiRequiredWidgets = isTestCase ? [] : parseJsonArray(q.ui_required_widgets);
+    delete q.ui_required_widgets;
 
-    q.testCases = cases.map(tc => ({
-      id: tc.id,
-      input: tc.is_hidden ? null : tc.input,
-      expectedOutput: tc.is_hidden ? null : tc.expected_output,
-      isHidden: tc.is_hidden,
-      order: tc.order_no,
-      status: "NOT_TESTED",
-    }));
+    if (assessmentType === "TEST_CASE") {
+      const [cases] = await pool.query(
+        `
+        SELECT id, input, expected_output, is_hidden, order_no
+        FROM test_cases
+        WHERE problem_id = ?
+        ORDER BY order_no
+        `,
+        [q.id]
+      );
+
+      q.testCases = cases.map(tc => ({
+        id: tc.id,
+        input: tc.is_hidden ? null : tc.input,
+        expectedOutput: tc.is_hidden ? null : tc.expected_output,
+        isHidden: tc.is_hidden,
+        order: tc.order_no,
+        status: "NOT_TESTED",
+      }));
+    } else {
+      const [[problemRow]] = await pool.query(
+        "SELECT reference_image_url FROM problems WHERE id = ?",
+        [q.id]
+      );
+      q.referenceImageUrl = problemRow?.reference_image_url || null;
+    }
   }
 
   res.json({
     questions,
+    assessmentType,
     session: {
       durationMinutes: session?.duration_minutes || null,
       startedAt: session?.started_at || null,
@@ -174,12 +240,37 @@ export async function getTestData(req, res) {
   });
 }
 
+function parseJsonArray(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map(v => String(v || "").trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    const raw = value.trim();
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map(v => String(v || "").trim()).filter(Boolean);
+      }
+    } catch {}
+
+    return raw
+      .split(/\r?\n|,/)
+      .map(v => v.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
 export async function getTestMeta(req, res) {
   try {
     const sessionId = req.params.sessionId;
     const [[session]] = await pool.query(
       `
-      SELECT duration_minutes, started_at, status, ignore_schedule_end
+      SELECT duration_minutes, started_at, status, ignore_schedule_end, level
       FROM test_sessions
       WHERE id = ?
       `,
@@ -194,6 +285,10 @@ export async function getTestMeta(req, res) {
       ? await getScheduleForTime(session.started_at)
       : null;
 
+    const { assessmentType } = session?.level
+      ? await getLevelConfig(session.level)
+      : { assessmentType: null };
+
     const now = new Date();
     const scheduleEnd = schedule?.end_at ? new Date(schedule.end_at) : null;
     const durationEnd = session?.started_at && session?.duration_minutes
@@ -204,15 +299,25 @@ export async function getTestMeta(req, res) {
     const shouldEndByDuration = durationEnd && now >= durationEnd;
 
     if (session.status === "IN_PROGRESS" && (shouldEndBySchedule || shouldEndByDuration)) {
+      let nextStatus = "FAIL";
+
+      if (assessmentType === "UI_COMPARE") {
+        const [[submissionRow]] = await pool.query(
+          "SELECT COUNT(*) AS totalCount FROM test_session_submissions WHERE test_session_id = ?",
+          [sessionId]
+        );
+        nextStatus = submissionRow?.totalCount ? "AWAITING_MANUAL" : "FAIL";
+      }
+
       await pool.query(
         `
         UPDATE test_sessions
-        SET status = 'FAIL', ended_at = NOW(), level_cleared = 0
+        SET status = ?, ended_at = NOW(), level_cleared = 0
         WHERE id = ?
         `,
-        [sessionId]
+        [nextStatus, sessionId]
       );
-      session.status = "FAIL";
+      session.status = nextStatus;
     }
 
     res.json({
@@ -221,6 +326,7 @@ export async function getTestMeta(req, res) {
         startedAt: session?.started_at || null,
         status: session?.status || null,
         scheduleEndAt: schedule?.end_at || null,
+        ignoreScheduleEnd: Boolean(session?.ignore_schedule_end),
       },
       serverNow: now.toISOString(),
     });
@@ -253,33 +359,57 @@ export async function finishTest(req, res) {
     }
 
     const [[totalRow]] = await pool.query(
-      `
-      SELECT COUNT(*) AS totalCount
-      FROM test_session_questions tsq
-      JOIN test_cases tc ON tc.problem_id = tsq.problem_id
-      WHERE tsq.test_session_id = ?
-      `,
+      "SELECT COUNT(*) AS totalCount FROM test_session_questions WHERE test_session_id = ?",
       [sessionId]
     );
-
     const totalCount = totalRow?.totalCount || 0;
+
+    const { assessmentType } = await getLevelConfig(session.level);
+
+    if (assessmentType === "UI_COMPARE") {
+      const [[submissionRow]] = await pool.query(
+        "SELECT COUNT(*) AS totalCount FROM test_session_submissions WHERE test_session_id = ?",
+        [sessionId]
+      );
+      const hasSubmissions = (submissionRow?.totalCount || 0) > 0;
+      const status = hasSubmissions ? "AWAITING_MANUAL" : "FAIL";
+
+      await pool.query(
+        `
+        UPDATE test_sessions
+        SET status = ?, ended_at = NOW(), feedback = ?, level_cleared = 0
+        WHERE id = ?
+        `,
+        [status, null, sessionId]
+      );
+
+      return res.json({
+        status,
+        totalPassed: 0,
+        totalCount,
+        levelCleared: false,
+        feedback: null,
+        level: session.level,
+        nextLevel: session.level,
+      });
+    }
 
     const [latestRows] = await pool.query(
       `
-      SELECT t.test_case_id, t.status
-      FROM test_case_results t
-      JOIN (
-        SELECT test_case_id, MAX(id) AS max_id
-        FROM test_case_results
+      SELECT problem_id, status
+      FROM (
+        SELECT problem_id, status,
+               ROW_NUMBER() OVER (PARTITION BY problem_id ORDER BY updated_at DESC, id DESC) AS rn
+        FROM test_session_submissions
         WHERE test_session_id = ?
-        GROUP BY test_case_id
-      ) latest ON latest.max_id = t.id
+      ) ranked
+      WHERE rn = 1
       `,
       [sessionId]
     );
 
     const passedCount = latestRows.filter(r => r.status === "PASS").length;
-    const levelCleared = totalCount > 0 && passedCount === totalCount;
+    const levelCleared = totalCount > 0 && passedCount === totalCount ? 1 : 0;
     const status = levelCleared ? "PASS" : "FAIL";
 
     await pool.query(
@@ -293,17 +423,14 @@ export async function finishTest(req, res) {
 
     if (status === "PASS" && levelCleared) {
       const nextLevel = getNextLevel(session.level);
-      await pool.query(
-        "UPDATE users SET current_level = ? WHERE id = ?",
-        [nextLevel, userId]
-      );
+      await setCurrentLevel(userId, nextLevel);
     }
 
     res.json({
       status,
       totalPassed: passedCount,
       totalCount,
-      levelCleared,
+      levelCleared: Boolean(levelCleared),
       feedback: null,
       level: session.level,
       nextLevel: levelCleared ? getNextLevel(session.level) : session.level,

@@ -1,4 +1,5 @@
 import express from "express";
+import path from "path";
 import cors from "cors";
 import passport from "passport";
 import cookieParser from "cookie-parser";
@@ -15,14 +16,21 @@ import adminRoutes from "./routes/admin.routes.js";
 
 const app = express();
 
+const corsOrigins = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || "http://localhost:5173")
+  .split(",")
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: "http://localhost:5173",
+  origin: corsOrigins,
   credentials: true,
 }));
 
 app.use(express.json());
 app.use(cookieParser());
 app.use(passport.initialize());
+
+app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
 // Routes
 app.use("/auth", authRoutes);

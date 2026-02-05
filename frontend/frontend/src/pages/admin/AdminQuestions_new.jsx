@@ -6,17 +6,26 @@ import {
   updateProblem, 
   fetchTestCases, 
   createTestCase,
-  deleteProblem
+  deleteProblem,
+  fetchLevels,
+  uploadProblemReferenceImage,
+  bulkImportProblems
 } from '../../api/adminApi';
+
+const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || import.meta.env.VITE_API_BASE || "http://localhost:5000";
 
 export default function AdminQuestions() {
   const [questions, setQuestions] = useState([]);
   const [selectedQuestion, setSelectedQuestion] = useState(null);
   const [showEditor, setShowEditor] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [levels, setLevels] = useState([]);
+  const [bulkFile, setBulkFile] = useState(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   useEffect(() => {
     loadQuestions();
+    loadLevels();
   }, []);
 
   async function loadQuestions() {
@@ -28,6 +37,15 @@ export default function AdminQuestions() {
       console.error('Failed to load questions:', err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadLevels() {
+    try {
+      const data = await fetchLevels();
+      setLevels(data.levels || []);
+    } catch (err) {
+      console.error('Failed to load levels:', err);
     }
   }
 
@@ -55,22 +73,60 @@ export default function AdminQuestions() {
     }
   }
 
+  async function handleBulkImport() {
+    if (!bulkFile) {
+      alert('Choose a file first');
+      return;
+    }
+
+    try {
+      setBulkLoading(true);
+      await bulkImportProblems(bulkFile);
+      setBulkFile(null);
+      await loadQuestions();
+      alert('Bulk import completed');
+    } catch (err) {
+      alert('Bulk import failed: ' + err.message);
+    } finally {
+      setBulkLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Question Bank</h1>
-        <button
-          onClick={handleCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
-        >
-          <Plus className="w-5 h-5" />
-          New Question
-        </button>
+        <div className="flex items-center gap-3">
+          <label className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 cursor-pointer">
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
+            />
+            Bulk Import
+          </label>
+          <button
+            onClick={handleBulkImport}
+            disabled={bulkLoading}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+          >
+            {bulkLoading ? 'Importing...' : 'Upload'}
+          </button>
+          <button
+            onClick={handleCreate}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-5 h-5" />
+            New Question
+          </button>
+        </div>
       </div>
 
       {showEditor ? (
         <QuestionEditor 
           question={selectedQuestion}
+          levels={levels}
           onSave={(saved) => {
             setShowEditor(false);
             loadQuestions();
@@ -159,24 +215,42 @@ function QuestionsTable({ questions, onEdit, onDelete, loading }) {
   );
 }
 
-function QuestionEditor({ question, onSave, onCancel }) {
+function QuestionEditor({ question, levels, onSave, onCancel }) {
+  const initialUiRequiredWidgets = (() => {
+    const raw = question?.ui_required_widgets;
+    if (!raw) return '';
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.join('\n');
+    } catch {}
+    return raw;
+  })();
+
+
   const [formData, setFormData] = useState({
     title: question?.title || '',
     description: question?.description || '',
     level: question?.level || '1A',
     starterCode: question?.starter_code || '',
     isActive: question?.is_active ?? true,
+    referenceImageUrl: question?.reference_image_url || '',
+    uiRequiredWidgets: initialUiRequiredWidgets,
   });
 
   const [testCases, setTestCases] = useState([]);
   const [testCaseForm, setTestCaseForm] = useState({ input: '', expectedOutput: '', isHidden: false, orderNo: 1 });
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   useEffect(() => {
     if (question?.id) {
-      loadTestCases();
+      const levelMeta = levels?.find(lvl => lvl.level_code === (question?.level || ''));
+      if (levelMeta?.assessment_type !== 'UI_COMPARE') {
+        loadTestCases();
+      }
     }
-  }, [question]);
+  }, [question, levels]);
 
   async function loadTestCases() {
     try {
@@ -220,6 +294,33 @@ function QuestionEditor({ question, onSave, onCancel }) {
 
   const sampleTestCases = testCases.filter(tc => !tc.is_hidden);
   const hiddenTestCases = testCases.filter(tc => tc.is_hidden);
+  const selectedLevelMeta = levels?.find(lvl => lvl.level_code === formData.level);
+  const isUiCompare = selectedLevelMeta?.assessment_type === 'UI_COMPARE';
+
+  async function handleUploadReference() {
+    if (!question?.id) {
+      alert('Please save the question first before uploading the reference image');
+      return;
+    }
+
+    if (!selectedImage) {
+      alert('Please select an image file');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const res = await uploadProblemReferenceImage(question.id, selectedImage);
+      setFormData(prev => ({ ...prev, referenceImageUrl: res.url }));
+      setSelectedImage(null);
+    } catch (err) {
+      alert('Failed to upload image: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+
 
   return (
     <div className="grid grid-cols-2 gap-6">
@@ -259,10 +360,15 @@ function QuestionEditor({ question, onSave, onCancel }) {
                   onChange={(e) => setFormData({ ...formData, level: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="1A">Level 1A</option>
-                  <option value="1B">Level 1B</option>
-                  <option value="2">Level 2</option>
-                  <option value="3">Level 3</option>
+                  {levels?.length ? (
+                    levels.map(level => (
+                      <option key={level.level_code} value={level.level_code}>
+                        Level {level.level_code}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={formData.level}>Level {formData.level}</option>
+                  )}
                 </select>
               </div>
 
@@ -309,10 +415,56 @@ function QuestionEditor({ question, onSave, onCancel }) {
         </div>
       </div>
 
-      {/* Right: Test Case Manager */}
+      {/* Right: Test Cases or UI Reference */}
       <div className="space-y-6">
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Test Cases</h3>
+        {isUiCompare ? (
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">UI Reference Image</h3>
+            <div className="space-y-4">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setSelectedImage(e.target.files?.[0] || null)}
+                className="block w-full text-sm text-gray-600"
+              />
+              <button
+                onClick={handleUploadReference}
+                disabled={uploading}
+                className="px-4 py-2 rounded-md bg-blue-600 text-white"
+              >
+                {uploading ? 'Uploading...' : 'Upload Reference Image'}
+              </button>
+              {formData.referenceImageUrl && (
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
+                  <div className="text-xs uppercase text-gray-500 mb-2">Preview</div>
+                  <img
+                    src={`${API_ORIGIN}${formData.referenceImageUrl}`}
+                    alt="Reference preview"
+                    className="max-h-80 w-full object-contain rounded-md"
+                  />
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-gray-200">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Required Widgets (one per line)
+                </label>
+                <textarea
+                  value={formData.uiRequiredWidgets}
+                  onChange={(e) => setFormData({ ...formData, uiRequiredWidgets: e.target.value })}
+                  rows={6}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
+                  placeholder="Scaffold\nAppBar\nListTile\nBottomNavigationBar"
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  These are used for automated scoring for UI questions.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Test Cases</h3>
 
           {/* Sample Test Cases */}
           <div className="mb-6">
@@ -416,7 +568,8 @@ function QuestionEditor({ question, onSave, onCancel }) {
               </p>
             </div>
           )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

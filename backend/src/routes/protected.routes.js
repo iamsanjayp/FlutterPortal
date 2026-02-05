@@ -18,7 +18,7 @@ router.get("/me", authenticate, async (req, res) => {
   );
 
   const level = await getCurrentLevel(req.user.id);
-  const { durationMinutes, questionCount } = getLevelConfig(level);
+  const { durationMinutes, questionCount, assessmentType } = await getLevelConfig(level);
 
   res.json({
     message: "Authenticated",
@@ -26,6 +26,7 @@ router.get("/me", authenticate, async (req, res) => {
     level,
     durationMinutes,
     questionCount,
+    assessmentType,
   });
 });
 

@@ -57,7 +57,7 @@ export default function AdminTests() {
     setError("");
     try {
       await updateSessionDuration(durationSessionId, {
-        durationMinutes: Number(durationMinutes),
+        extendMinutes: Number(durationMinutes),
       });
       pushNotice("Duration updated");
     } catch (err) {
@@ -148,8 +148,8 @@ export default function AdminTests() {
 
         <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-sm p-5 space-y-3 border-l-4 border-sky-500">
           <div>
-            <div className="text-sm font-semibold text-slate-100">Change Duration</div>
-            <div className="text-xs text-slate-400">Extend timing for active tests.</div>
+            <div className="text-sm font-semibold text-slate-100">Extend Duration</div>
+            <div className="text-xs text-slate-400">Add minutes to the remaining time.</div>
           </div>
           <input
             value={durationSessionId}
@@ -161,7 +161,7 @@ export default function AdminTests() {
             value={durationMinutes}
             onChange={event => setDurationMinutes(event.target.value)}
             className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
-            placeholder="Duration (minutes)"
+            placeholder="Minutes to add"
           />
           <button
             onClick={handleUpdateDuration}

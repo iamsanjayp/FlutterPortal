@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:5000";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
 
 async function request(url, options = {}) {
   const res = await fetch(url, {
@@ -29,6 +29,13 @@ export function fetchAdminMetrics() {
 
 export function fetchSchedules() {
   return request(`${API_BASE}/api/admin/schedules`);
+}
+
+export function extendScheduleDuration(scheduleId, payload) {
+  return request(`${API_BASE}/api/admin/schedules/${scheduleId}/extend-duration`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function createSchedule(payload) {
@@ -69,6 +76,18 @@ export function forceLogoutSession(sessionId) {
   });
 }
 
+export function resetUserLogin(userId) {
+  return request(`${API_BASE}/api/admin/users/${userId}/reset-login`, {
+    method: "POST",
+  });
+}
+
+export function forceLogoutUser(userId) {
+  return request(`${API_BASE}/api/admin/users/${userId}/force-logout`, {
+    method: "POST",
+  });
+}
+
 export function updateSessionDuration(id, payload) {
   return request(`${API_BASE}/api/admin/sessions/${id}/duration`, {
     method: "PATCH",
@@ -94,6 +113,11 @@ export function fetchSubmissions(params = {}) {
   return request(`${API_BASE}/api/admin/submissions${query ? `?${query}` : ""}`);
 }
 
+export function fetchUiSubmissions(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return request(`${API_BASE}/api/admin/submissions/ui${query ? `?${query}` : ""}`);
+}
+
 export function updateSubmissionStatus(id, payload) {
   return request(`${API_BASE}/api/admin/submissions/${id}/status`, {
     method: "PATCH",
@@ -101,10 +125,75 @@ export function updateSubmissionStatus(id, payload) {
   });
 }
 
-export function fetchStudents(query) {
+export function deleteSubmission(id) {
+  return request(`${API_BASE}/api/admin/submissions/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function fetchStudents(query, options = {}) {
   const params = new URLSearchParams();
   if (query) params.set("query", query);
+
+  const roles = options.roles || null;
+  const role = options.role ?? "STUDENT";
+
+  if (roles && roles.length) {
+    params.set("roles", Array.isArray(roles) ? roles.join(",") : String(roles));
+  } else if (role) {
+    params.set("role", role);
+  }
+
   return request(`${API_BASE}/api/admin/students?${params.toString()}`);
+}
+
+export function fetchStaff(query) {
+  return fetchStudents(query, { roles: ["TEACHER", "ADMIN"] });
+}
+
+export function fetchTeachers(query) {
+  const params = new URLSearchParams();
+  if (query) params.set("query", query);
+  params.set("role", "TEACHER");
+  return request(`${API_BASE}/api/admin/students?${params.toString()}`);
+}
+
+export function createUser(payload) {
+  return request(`${API_BASE}/api/admin/users`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateUser(id, payload) {
+  return request(`${API_BASE}/api/admin/users/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function bulkImportUsers(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${API_BASE}/api/admin/users/bulk`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `API error (${res.status})`);
+    }
+    throw new Error(payload.error || payload.message || `API error (${res.status})`);
+  }
+
+  return res.json();
 }
 
 export function updateStudentStatus(id, payload) {
@@ -129,6 +218,48 @@ export function fetchProblems() {
   return request(`${API_BASE}/api/admin/problems`);
 }
 
+export async function bulkImportProblems(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${API_BASE}/api/admin/problems/bulk`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `API error (${res.status})`);
+    }
+    throw new Error(payload.error || payload.message || `API error (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export function fetchLevels() {
+  return request(`${API_BASE}/api/admin/levels`);
+}
+
+export function createLevel(payload) {
+  return request(`${API_BASE}/api/admin/levels`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateLevel(code, payload) {
+  return request(`${API_BASE}/api/admin/levels/${code}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function createProblem(payload) {
   return request(`${API_BASE}/api/admin/problems`, {
     method: "POST",
@@ -147,6 +278,30 @@ export function deleteProblem(id) {
   return request(`${API_BASE}/api/admin/problems/${id}`, {
     method: "DELETE",
   });
+}
+
+export async function uploadProblemReferenceImage(problemId, file) {
+  const formData = new FormData();
+  formData.append("image", file);
+
+  const res = await fetch(`${API_BASE}/api/admin/problems/${problemId}/reference-image`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `API error (${res.status})`);
+    }
+    throw new Error(payload.error || payload.message || `API error (${res.status})`);
+  }
+
+  return res.json();
 }
 
 export function fetchTestCases(problemId) {

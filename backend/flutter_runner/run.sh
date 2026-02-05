@@ -5,4 +5,4 @@ cd /workspace
 
 flutter pub get
 
-flutter test --machine
+flutter test --machine "$@"

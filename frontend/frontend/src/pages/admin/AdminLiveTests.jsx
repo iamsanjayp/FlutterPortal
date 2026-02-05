@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Search, RefreshCw, UserX, Clock, AlertCircle, RotateCcw } from 'lucide-react';
+import { Search, RefreshCw, Clock, AlertCircle } from 'lucide-react';
 import { 
   fetchSessions, 
+  fetchSchedules,
   resetQuestions, 
   updateSessionDuration,
   resetSessionLogin,
   forceLogoutSession,
-  reinstateSession
+  reinstateSession,
+  extendScheduleDuration
 } from '../../api/adminApi';
 
 export default function AdminLiveTests() {
@@ -17,18 +19,37 @@ export default function AdminLiveTests() {
   const [loading, setLoading] = useState(false);
   const [selectedSessions, setSelectedSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
+  const [schedules, setSchedules] = useState([]);
+  const [selectedScheduleId, setSelectedScheduleId] = useState('');
 
   useEffect(() => {
     loadSessions();
     const interval = setInterval(loadSessions, 10000); // Refresh every 10s
     return () => clearInterval(interval);
-  }, [searchDate]);
+  }, [searchDate, selectedScheduleId]);
+
+  useEffect(() => {
+    loadSchedules();
+  }, []);
+
+  async function loadSchedules() {
+    try {
+      const data = await fetchSchedules();
+      setSchedules(data.schedules || []);
+      if (!selectedScheduleId && data.schedules?.length) {
+        setSelectedScheduleId(String(data.schedules[0].id));
+      }
+    } catch (err) {
+      console.error('Failed to load schedules:', err);
+    }
+  }
 
   async function loadSessions() {
     try {
       setLoading(true);
       const data = await fetchSessions({
         date: searchDate || undefined,
+        scheduleId: selectedScheduleId || undefined,
       });
       setSessions(data.sessions || []);
     } catch (err) {
@@ -53,11 +74,11 @@ export default function AdminLiveTests() {
   }
 
   async function handleExtendTime(sessionId, currentDuration) {
-    const newDuration = prompt(`Enter new duration in minutes (current: ${currentDuration}):`, currentDuration);
-    if (!newDuration) return;
+    const addMinutes = prompt(`Add minutes to remaining time (current duration: ${currentDuration}):`, "5");
+    if (!addMinutes) return;
 
     try {
-      await updateSessionDuration(sessionId, { durationMinutes: parseInt(newDuration) });
+      await updateSessionDuration(sessionId, { extendMinutes: parseInt(addMinutes) });
       alert('Duration updated successfully');
       loadSessions();
     } catch (err) {
@@ -105,12 +126,30 @@ export default function AdminLiveTests() {
         email: searchEmail || undefined,
         rollNo: searchRoll || undefined,
         date: searchDate || undefined,
+        scheduleId: selectedScheduleId || undefined,
       });
       setSessions(data.sessions || []);
     } catch (err) {
       console.error('Failed to search sessions:', err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleBulkExtend() {
+    if (!selectedScheduleId) {
+      alert('Select a slot to extend');
+      return;
+    }
+    const addMinutes = prompt('Add minutes for all students in this slot:', '5');
+    if (!addMinutes) return;
+
+    try {
+      await extendScheduleDuration(selectedScheduleId, { extendMinutes: parseInt(addMinutes) });
+      alert('Slot duration extended');
+      loadSessions();
+    } catch (err) {
+      alert('Failed to extend slot: ' + err.message);
     }
   }
 
@@ -209,6 +248,18 @@ export default function AdminLiveTests() {
       {/* Search Bar */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
         <div className="flex items-center gap-3">
+          <select
+            value={selectedScheduleId}
+            onChange={(e) => setSelectedScheduleId(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="">All Slots</option>
+            {schedules.map((schedule) => (
+              <option key={schedule.id} value={schedule.id}>
+                {schedule.name} ({new Date(schedule.start_at).toLocaleDateString()})
+              </option>
+            ))}
+          </select>
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -237,6 +288,12 @@ export default function AdminLiveTests() {
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Search
+          </button>
+          <button
+            onClick={handleBulkExtend}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+          >
+            Extend Slot Time
           </button>
         </div>
       </div>
@@ -320,43 +377,13 @@ export default function AdminLiveTests() {
                     {session.status}
                   </span>
                 </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => setSelectedSession(session)}
-                      className="px-3 py-1.5 text-sm bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors"
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => handleResetLogin(session.id)}
-                      className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
-                      title="Reset Login"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleForceLogout(session.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Force Logout"
-                    >
-                      <UserX className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleExtendTime(session.id, session.duration_minutes)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Extend Time"
-                    >
-                      <Clock className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleResetQuestions(session.id)}
-                      className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                      title="Change Questions"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                    </button>
-                  </div>
+                <td className="px-6 py-4 text-right">
+                  <button
+                    onClick={() => setSelectedSession(session)}
+                    className="px-3 py-1.5 text-sm bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors"
+                  >
+                    View
+                  </button>
                 </td>
               </tr>
             ))}

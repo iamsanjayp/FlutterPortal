@@ -42,6 +42,7 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
   const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState(0);
   const [autoFinished, setAutoFinished] = useState(false);
   const autoFinishPendingRef = useRef(false);
+  const storageKey = sessionId ? `test-${sessionId}` : null;
 
   const activeQuestion = questions[activeIndex];
   const activeQuestionId = activeQuestion?.id;
@@ -75,7 +76,9 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
         setSessionStartedAt(startedAt);
         if (serverDuration) {
           const durationEndAt = startedAt + serverDuration * 60 * 1000;
-          const scheduleEndAt = sessionMeta.scheduleEndAt
+          const scheduleEndAt = sessionMeta.ignoreScheduleEnd
+            ? null
+            : sessionMeta.scheduleEndAt
             ? new Date(sessionMeta.scheduleEndAt).getTime()
             : null;
           const endAt = scheduleEndAt ? Math.min(durationEndAt, scheduleEndAt) : durationEndAt;
@@ -88,8 +91,20 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
         }
 
         const initialCodeMap = buildInitialCodeMap(normalized);
-        setCodeByQuestionId(initialCodeMap);
-        setCode(initialCodeMap[normalized[0]?.id] ?? "");
+        let storedMap = {};
+        if (storageKey) {
+          try {
+            const parsed = JSON.parse(localStorage.getItem(storageKey) || "{}");
+            if (parsed && typeof parsed === "object") {
+              storedMap = parsed;
+            }
+          } catch {
+            storedMap = {};
+          }
+        }
+        const mergedMap = { ...initialCodeMap, ...storedMap };
+        setCodeByQuestionId(mergedMap);
+        setCode(mergedMap[normalized[0]?.id] ?? "");
         setResultsByQuestionId({});
         setResults(null);
         setSessionVerdict(null);
@@ -108,6 +123,11 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
       isMounted = false;
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!storageKey) return;
+    localStorage.setItem(storageKey, JSON.stringify(codeByQuestionId));
+  }, [storageKey, codeByQuestionId]);
 
   useEffect(() => {
     if (!timerEndAt) return;
@@ -151,7 +171,9 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
           setSessionStartedAt(startedAt);
         }
         const durationEndAt = startedAt + meta.durationMinutes * 60 * 1000;
-        const scheduleEndAt = meta.scheduleEndAt
+        const scheduleEndAt = meta.ignoreScheduleEnd
+          ? null
+          : meta.scheduleEndAt
           ? new Date(meta.scheduleEndAt).getTime()
           : null;
         const endAt = scheduleEndAt ? Math.min(durationEndAt, scheduleEndAt) : durationEndAt;
@@ -300,7 +322,9 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
       if (meta.durationMinutes && meta.startedAt) {
         const startedAt = new Date(meta.startedAt).getTime();
         const durationEndAt = startedAt + meta.durationMinutes * 60 * 1000;
-        const scheduleEndAt = meta.scheduleEndAt
+        const scheduleEndAt = meta.ignoreScheduleEnd
+          ? null
+          : meta.scheduleEndAt
           ? new Date(meta.scheduleEndAt).getTime()
           : null;
         const endAt = scheduleEndAt ? Math.min(durationEndAt, scheduleEndAt) : durationEndAt;
@@ -335,18 +359,18 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
   }
 
   return (
-    <div className="h-screen grid grid-rows-[auto_1fr_auto] bg-slate-50">
+    <div className="h-screen grid grid-rows-[auto_1fr_auto] bg-gray-50">
       {/* Header */}
-      <div className="px-6 py-4 bg-sky-500 text-white font-semibold flex items-center justify-between">
+      <div className="px-6 py-4 bg-white border-b border-gray-200 text-gray-800 font-semibold flex items-center justify-between">
         <div>Flutter Skill Test — Level {level}</div>
         <div className="flex items-center gap-4 text-sm font-medium">
           {timeLabel && (
-            <span className="rounded-full bg-white/20 px-3 py-1">Time Left: {timeLabel}</span>
+            <span className="rounded-full bg-blue-50 text-blue-700 px-3 py-1">Time Left: {timeLabel}</span>
           )}
           <button
             onClick={handleFinish}
             disabled={finishing}
-            className="rounded-full bg-white text-sky-600 px-4 py-1"
+            className="rounded-md bg-blue-600 text-white px-4 py-2"
           >
             {finishing ? "Finishing..." : "Finish Test"}
           </button>
@@ -355,15 +379,15 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
 
       {/* Main */}
       <div className="grid grid-rows-[auto_1fr] gap-4 p-4 overflow-hidden">
-        <div className="bg-white rounded-lg shadow-sm border border-slate-100 p-2 flex gap-2">
+        <div className="bg-white rounded-lg border border-gray-200 p-2 flex gap-2">
           {questions.map((question, index) => (
             <button
               key={question.id}
               onClick={() => handleSelectQuestion(index)}
               className={`px-3 py-1 rounded-md border text-sm transition ${
                 index === activeIndex
-                  ? "bg-sky-500 text-white border-sky-500"
-                  : "bg-white text-slate-700 border-slate-200 hover:border-sky-300"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-700 border-gray-200 hover:border-blue-300"
               }`}
             >
               Question {index + 1}
@@ -378,13 +402,13 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t bg-white">
+      <div className="p-4 border-t border-gray-200 bg-white">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <button
               onClick={submitCode}
               disabled={loading}
-              className="px-4 py-2 rounded-md bg-sky-500 text-white"
+              className="px-4 py-2 rounded-md bg-blue-600 text-white"
             >
               {loading ? "Submitting…" : "Submit"}
             </button>
@@ -413,12 +437,12 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-4">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div className="text-sm font-semibold text-slate-700">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <div className="text-sm font-semibold text-gray-700">
               Custom Input
             </div>
             <textarea
-              className="mt-2 w-full h-28 resize-none rounded-md border border-slate-200 bg-white p-2 text-sm text-slate-700"
+              className="mt-2 w-full h-28 resize-none rounded-md border border-gray-200 bg-white p-2 text-sm text-gray-700"
               placeholder="Enter custom input..."
               value={customInput}
               onChange={(event) => setCustomInput(event.target.value)}
@@ -426,17 +450,17 @@ export default function TestPage({ sessionId, level = "1A", durationMinutes, onL
             <button
               onClick={runCustomInput}
               disabled={customLoading}
-              className="mt-3 px-4 py-2 rounded-md bg-sky-500 text-white"
+              className="mt-3 px-4 py-2 rounded-md bg-blue-600 text-white"
             >
               {customLoading ? "Running…" : "Run Code"}
             </button>
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div className="text-sm font-semibold text-slate-700">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <div className="text-sm font-semibold text-gray-700">
               Output
             </div>
-            <div className="mt-2 h-28 rounded-md border border-slate-200 bg-white p-2 text-sm text-slate-500">
+            <div className="mt-2 h-28 rounded-md border border-gray-200 bg-white p-2 text-sm text-gray-500">
               {customOutput || "Run code to see output."}
             </div>
           </div>

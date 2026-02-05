@@ -1,8 +1,10 @@
 import { exec } from "child_process";
 import fs from "fs";
 import path from "path";
+import https from "https";
 import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,16 +12,57 @@ const __dirname = path.dirname(__filename);
 // BASE DIRECTORY = src/execution/flutter
 const BASE_DIR = __dirname;
 const TEMPLATE_DIR = path.join(BASE_DIR, "template");
+const TEMPLATE_UI_DIR = path.join(BASE_DIR, "template_ui");
 
+// Ensure student's UI code has the Flutter material import to avoid
+// compile errors when they forget to include it. Only skip adding
+// the import if `package:flutter/material.dart` is already present.
+function ensureUiImport(src) {
+  if (/import\s+['"]package:flutter\/material\.dart['"]/.test(src)) return src;
+  return "import 'package:flutter/material.dart';\n" + src;
+}
+
+async function ensureTemplateFonts() {
+  try {
+    const fontsDir = path.join(TEMPLATE_UI_DIR, 'fonts');
+    if (fs.existsSync(path.join(fontsDir, 'Roboto-Regular.ttf')) && fs.existsSync(path.join(fontsDir, 'Roboto-Bold.ttf'))) {
+      return;
+    }
+    fs.mkdirSync(fontsDir, { recursive: true });
+    const robotoBase = "https://raw.githubusercontent.com/google/fonts/main/apache/roboto";
+    const downloads = [
+      { url: `${robotoBase}/Roboto-Regular.ttf`, dest: path.join(fontsDir, 'Roboto-Regular.ttf') },
+      { url: `${robotoBase}/Roboto-Bold.ttf`, dest: path.join(fontsDir, 'Roboto-Bold.ttf') },
+    ];
+    for (const d of downloads) {
+      if (!fs.existsSync(d.dest)) {
+        await new Promise((res, rej) => {
+          const req = https.get(d.url, (response) => {
+            if (response.statusCode !== 200) { rej(new Error(`HTTP ${response.statusCode}`)); return; }
+            const ws = fs.createWriteStream(d.dest);
+            response.pipe(ws);
+            ws.on('finish', () => ws.close(res));
+            ws.on('error', rej);
+          });
+          req.on('error', rej);
+        });
+        // small delay to ensure file system visibility on Windows
+        await sleep(50);
+        console.error(`Downloaded template font ${d.url}`);
+      }
+    }
+  } catch (e) {
+    console.error('Failed to ensure template fonts:', e && e.message ? e.message : e);
+  }
+}
 export async function runFlutterCode(code, { functionName, cases }) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     const runId = uuidv4();
     const workDir = path.join(BASE_DIR, "runs", runId);
 
     fs.mkdirSync(workDir, { recursive: true });
     fs.cpSync(TEMPLATE_DIR, workDir, { recursive: true });
 
-    // Inject student code
     fs.writeFileSync(
       path.join(workDir, "lib", "solution.dart"),
       code
@@ -31,55 +74,257 @@ export async function runFlutterCode(code, { functionName, cases }) {
       testFileContent
     );
 
-    const dockerCmd = `docker run --rm -v "${workDir.replace(/\\/g, "/")}:/workspace" flutter-runner`;
-
+    const useHostNetwork = process.env.FLUTTER_RUNNER_USE_HOST_NETWORK === "true";
+    const networkArg = useHostNetwork ? "--network host" : "";
+    const containerName = `code-test-${runId}`;
     const startTime = Date.now();
+    let output = "";
 
-    exec(dockerCmd, { timeout: 30000 }, (error, stdout, stderr) => {
-      const duration = Date.now() - startTime;
-
-      const output = stdout.toString() + "\n" + stderr.toString();
-
-      try {
-        const result = parseFlutterOutput(output, duration);
-        resolve({
-          ...result,
-          rawOutput: output,
-          testFileContent,
+    const execAsync = (cmd, opts = {}) =>
+      new Promise((resolveCmd, rejectCmd) => {
+        exec(cmd, opts, (err, stdout, stderr) => {
+          if (err) {
+            err.stdout = stdout;
+            err.stderr = stderr;
+            return rejectCmd(err);
+          }
+          return resolveCmd({ stdout, stderr });
         });
-      } catch (e) {
-        resolve({
-          status: "ERROR",
-          message: "Failed to parse test output",
-          rawOutput: output,
-          testFileContent,
-        });
-      } finally {
-        try {
-          fs.rmSync(workDir, { recursive: true, force: true });
-        } catch {
-          setTimeout(() => {
-            try {
-              fs.rmSync(workDir, { recursive: true, force: true });
-            } catch {
-              // ignore cleanup errors on Windows file locks
-            }
-          }, 500);
-        }
+      });
+
+    try {
+      await execAsync(
+        `docker run --name ${containerName} -d ${networkArg} -v flutter_pub_cache:/root/.pub-cache --entrypoint /bin/bash flutter-runner -c "sleep 300"`,
+        { timeout: 30000 }
+      );
+
+      await execAsync(
+        `docker exec ${containerName} /bin/bash -c "mkdir -p /workspace"`,
+        { timeout: 30000 }
+      );
+
+      await execAsync(
+        `docker cp "${workDir.replace(/\\/g, "/")}/." ${containerName}:/workspace`,
+        { timeout: 30000 }
+      );
+
+      const runResult = await execAsync(
+        `docker exec ${containerName} /bin/bash -c "rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter pub get && flutter test --reporter json"`,
+        { timeout: 300000 }
+      );
+      output = runResult.stdout.toString() + "\n" + runResult.stderr.toString();
+    } catch (err) {
+      const stdout = err.stdout ? err.stdout.toString() : "";
+      const stderr = err.stderr ? err.stderr.toString() : "";
+      output = `${stdout}\n${stderr}`.trim();
+      if (err.message && !output.includes(err.message)) {
+        output += `\n${err.message}`;
       }
+    }
+
+    const duration = Date.now() - startTime;
+
+    try {
+      const result = parseFlutterOutput(output, duration);
+      resolve({
+        ...result,
+        rawOutput: output,
+        testFileContent,
+      });
+    } catch {
+      resolve({
+        status: "ERROR",
+        message: "Failed to parse test output",
+        rawOutput: output,
+        testFileContent,
+      });
+    } finally {
+      try {
+        exec(`docker rm -f ${containerName}`);
+      } catch {}
+      try {
+        fs.rmSync(workDir, { recursive: true, force: true });
+      } catch {
+        setTimeout(() => {
+          try {
+            fs.rmSync(workDir, { recursive: true, force: true });
+          } catch {
+            // ignore cleanup errors on Windows file locks
+          }
+        }, 500);
+      }
+    }
+  });
+}
+
+export async function runFlutterUI(code) {
+  return new Promise(async (resolve) => {
+    const runId = uuidv4();
+    const workDir = path.join(BASE_DIR, "runs", runId);
+    const uiTimeoutMs = Number(process.env.UI_TEST_TIMEOUT_MS || 120000);
+
+    fs.mkdirSync(workDir, { recursive: true });
+    await ensureTemplateFonts();
+    fs.cpSync(TEMPLATE_UI_DIR, workDir, { recursive: true });
+
+
+    // Clean any host-generated Flutter artifacts that may contain Windows paths
+    try { fs.rmSync(path.join(workDir, ".dart_tool"), { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(path.join(workDir, ".packages"), { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(path.join(workDir, ".flutter-plugins"), { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(path.join(workDir, ".flutter-plugins-dependencies"), { recursive: true, force: true }); } catch {}
+
+    fs.writeFileSync(
+      path.join(workDir, "lib", "solution.dart"),
+      ensureUiImport(code)
+    );
+
+    
+
+    // Allow optional host network mode via env vars
+    const useHostNetworkUI = process.env.FLUTTER_RUNNER_USE_HOST_NETWORK === "true";
+    const networkArg = useHostNetworkUI ? "--network host" : "";
+    const containerName = `ui-test-${runId}`;
+    const startTime = Date.now();
+    const previewPath = path.join(workDir, "test", "goldens", "preview.png");
+    let output = "";
+    let error = null;
+
+    const execAsync = (cmd, opts = {}) =>
+      new Promise((resolveCmd, rejectCmd) => {
+        exec(cmd, opts, (err, stdout, stderr) => {
+          if (err) {
+            err.stdout = stdout;
+            err.stderr = stderr;
+            return rejectCmd(err);
+          }
+          return resolveCmd({ stdout, stderr });
+        });
+      });
+
+    const timeoutHandle = setTimeout(async () => {
+      try {
+        await execAsync(`docker rm -f ${containerName}`, { timeout: 30000 });
+      } catch {}
+      resolve({
+        status: "ERROR",
+        message: `UI render timed out after ${uiTimeoutMs / 1000}s`,
+        rawOutput: output,
+        executionTimeMs: Date.now() - startTime,
+        previewPath: null,
+        previewBuffer: null,
+      });
+    }, uiTimeoutMs);
+
+    try {
+      console.log(`[UI TEST] Starting docker: ${containerName}`);
+
+      // Start a long-lived container (no host mounts) to avoid Windows path contamination.
+      await execAsync(
+        `docker run --name ${containerName} -d ${networkArg} --memory=2g --memory-swap=2g --entrypoint /bin/bash flutter-runner -c "sleep 300"`,
+        { timeout: 30000 }
+      );
+
+      await execAsync(
+        `docker exec ${containerName} /bin/bash -c "mkdir -p /workspace"`,
+        { timeout: 30000 }
+      );
+
+      // Copy workspace into container (no bind mounts).
+      await execAsync(
+        `docker cp "${workDir.replace(/\\/g, "/")}/." ${containerName}:/workspace`,
+        { timeout: 30000 }
+      );
+
+      // Ensure Material Icons font is available in workspace/fonts for tests.
+      await execAsync(
+        `docker exec ${containerName} /bin/bash -c "mkdir -p /workspace/fonts && cp /sdks/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf /workspace/fonts/MaterialIcons-Regular.otf"`,
+        { timeout: 30000 }
+      );
+
+      const runResult = await execAsync(
+        `docker exec ${containerName} /bin/bash -c "rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter pub get && flutter test --reporter json -j1 --timeout=60s"`,
+        { timeout: uiTimeoutMs }
+      );
+      output = runResult.stdout.toString() + "\n" + runResult.stderr.toString();
+    } catch (err) {
+      error = err;
+      const stdout = err.stdout ? err.stdout.toString() : "";
+      const stderr = err.stderr ? err.stderr.toString() : "";
+      output = `${stdout}\n${stderr}`.trim();
+      if (err.message && !output.includes(err.message)) {
+        output += `\n${err.message}`;
+      }
+    }
+
+    clearTimeout(timeoutHandle);
+
+    const duration = Date.now() - startTime;
+    console.log(`[UI TEST] ===== FULL DOCKER OUTPUT START =====`);
+    console.log(output);
+    console.log(`[UI TEST] ===== FULL DOCKER OUTPUT END =====`);
+    console.log(`[UI TEST] Docker error object:`, error);
+
+    // Copy the file from the container to the host explicitly.
+    console.log(`[UI TEST] Copying preview from container ${containerName}...`);
+    try {
+      await execAsync(
+        `docker cp ${containerName}:/workspace/test/goldens/preview.png "${previewPath}"`,
+        { timeout: 30000 }
+      );
+    } catch (cpErr) {
+      console.log(`[UI TEST] Docker cp failed: ${cpErr.message}`);
+    }
+
+    // Clean up container after copy attempt
+    await execAsync(`docker rm -f ${containerName}`, { timeout: 30000 }).catch(() => {});
+
+    console.log(`[UI TEST] Checking preview at: ${previewPath}`);
+    const previewExists = fs.existsSync(previewPath);
+    console.log(`[UI TEST] Preview exists: ${previewExists}`);
+
+    if (previewExists) {
+      console.log(`[UI TEST] ✓ Preview found! Returning success.`);
+      const previewBuffer = fs.readFileSync(previewPath);
+      resolve({
+        status: "OK",
+        rawOutput: output,
+        executionTimeMs: duration,
+        previewPath,
+        previewBuffer,
+      });
+      try {
+        fs.rmSync(workDir, { recursive: true, force: true });
+      } catch {
+        setTimeout(() => {
+          try {
+            fs.rmSync(workDir, { recursive: true, force: true });
+          } catch {}
+        }, 500);
+      }
+      return;
+    }
+
+    // No preview - fail
+    resolve({
+      status: "ERROR",
+      message: "UI render failed - no preview generated",
+      rawOutput: output,
+      executionTimeMs: duration,
+      previewPath: null,
+      previewBuffer: null,
     });
   });
 }
 
 export async function runFlutterCustom(code, { functionName, dartArgs }) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     const runId = uuidv4();
     const workDir = path.join(BASE_DIR, "runs", runId);
 
     fs.mkdirSync(workDir, { recursive: true });
     fs.cpSync(TEMPLATE_DIR, workDir, { recursive: true });
 
-    // Inject student code
     fs.writeFileSync(
       path.join(workDir, "lib", "solution.dart"),
       code
@@ -91,43 +336,86 @@ export async function runFlutterCustom(code, { functionName, dartArgs }) {
       testFileContent
     );
 
-    const dockerCmd = `docker run --rm -v "${workDir.replace(/\\/g, "/")}:/workspace" flutter-runner`;
-
+    const useHostNetworkCustom = process.env.FLUTTER_RUNNER_USE_HOST_NETWORK === "true";
+    const networkArgCustom = useHostNetworkCustom ? "--network host" : "";
+    const containerName = `custom-test-${runId}`;
     const startTime = Date.now();
+    let output = "";
 
-    exec(dockerCmd, { timeout: 30000 }, (error, stdout, stderr) => {
-      const duration = Date.now() - startTime;
-
-      const output = stdout.toString() + "\n" + stderr.toString();
-
-      try {
-        const result = parseFlutterOutput(output, duration);
-        resolve({
-          ...result,
-          rawOutput: output,
-          testFileContent,
+    const execAsync = (cmd, opts = {}) =>
+      new Promise((resolveCmd, rejectCmd) => {
+        exec(cmd, opts, (err, stdout, stderr) => {
+          if (err) {
+            err.stdout = stdout;
+            err.stderr = stderr;
+            return rejectCmd(err);
+          }
+          return resolveCmd({ stdout, stderr });
         });
-      } catch (e) {
-        resolve({
-          status: "ERROR",
-          message: "Failed to parse test output",
-          rawOutput: output,
-          testFileContent,
-        });
-      } finally {
-        try {
-          fs.rmSync(workDir, { recursive: true, force: true });
-        } catch {
-          setTimeout(() => {
-            try {
-              fs.rmSync(workDir, { recursive: true, force: true });
-            } catch {
-              // ignore cleanup errors on Windows file locks
-            }
-          }, 500);
-        }
+      });
+
+    try {
+      await execAsync(
+        `docker run --name ${containerName} -d ${networkArgCustom} -v flutter_pub_cache:/root/.pub-cache --entrypoint /bin/bash flutter-runner -c "sleep 300"`,
+        { timeout: 30000 }
+      );
+
+      await execAsync(
+        `docker exec ${containerName} /bin/bash -c "mkdir -p /workspace"`,
+        { timeout: 30000 }
+      );
+
+      await execAsync(
+        `docker cp "${workDir.replace(/\\/g, "/")}/." ${containerName}:/workspace`,
+        { timeout: 30000 }
+      );
+
+      const runResult = await execAsync(
+        `docker exec ${containerName} /bin/bash -c "rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter pub get && flutter test"`,
+        { timeout: 300000 }
+      );
+      output = runResult.stdout.toString() + "\n" + runResult.stderr.toString();
+    } catch (err) {
+      const stdout = err.stdout ? err.stdout.toString() : "";
+      const stderr = err.stderr ? err.stderr.toString() : "";
+      output = `${stdout}\n${stderr}`.trim();
+      if (err.message && !output.includes(err.message)) {
+        output += `\n${err.message}`;
       }
-    });
+    }
+
+    const duration = Date.now() - startTime;
+
+    try {
+      const result = parseFlutterOutput(output, duration);
+      resolve({
+        ...result,
+        rawOutput: output,
+        testFileContent,
+      });
+    } catch {
+      resolve({
+        status: "ERROR",
+        message: "Failed to parse test output",
+        rawOutput: output,
+        testFileContent,
+      });
+    } finally {
+      try {
+        exec(`docker rm -f ${containerName}`);
+      } catch {}
+      try {
+        fs.rmSync(workDir, { recursive: true, force: true });
+      } catch {
+        setTimeout(() => {
+          try {
+            fs.rmSync(workDir, { recursive: true, force: true });
+          } catch {
+            // ignore cleanup errors on Windows file locks
+          }
+        }, 500);
+      }
+    }
   });
 }
 
@@ -179,7 +467,7 @@ function parseFlutterOutput(output, timeMs) {
     }
   }
 
-  const customOutput = extractCustomOutput(printLines);
+  const customOutput = extractCustomOutput(printLines, output);
 
   return {
     status: failed === 0 ? "PASS" : "FAIL",
@@ -233,11 +521,22 @@ function extractTestCaseId(name) {
   return Number(match[1]);
 }
 
-function extractCustomOutput(printLines) {
+function extractCustomOutput(printLines, rawOutput) {
   const prefix = "__CUSTOM_OUTPUT__";
   const line = printLines.find(message => message.includes(prefix));
-  if (!line) return "";
-  const index = line.indexOf(prefix);
-  return line.slice(index + prefix.length).trim();
+  if (line) {
+    const index = line.indexOf(prefix);
+    const direct = line.slice(index + prefix.length).trim();
+    if (direct) return direct;
+  }
+
+  if (rawOutput) {
+    const match = rawOutput.match(new RegExp(`${prefix}([^"\\r\\n]*)`));
+    if (match) {
+      return match[1].trim();
+    }
+  }
+
+  return "";
 }
 

@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:5000";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
 
 async function request(url, options = {}) {
   const res = await fetch(url, {
@@ -17,12 +17,6 @@ async function request(url, options = {}) {
   return res.json();
 }
 
-export function loginWithPassword(payload) {
-  return request(`${API_BASE}/auth/login`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
 
 export function fetchMe() {
   return request(`${API_BASE}/api/me`);

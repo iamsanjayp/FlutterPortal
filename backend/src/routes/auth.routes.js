@@ -3,9 +3,9 @@ import passport from "passport";
 import { signAccessToken } from "../utils/jwt.js";
 import { getActiveSchedule } from "../utils/schedule.js";
 import pool from "../config/db.js";
-import bcrypt from "bcrypt";
 
 const router = express.Router();
+const cookieMaxAgeMs = Number(process.env.JWT_COOKIE_MAX_AGE_MS) || 7 * 24 * 60 * 60 * 1000;
 
 /**
  * STEP 1: Redirect user to Google login
@@ -29,7 +29,7 @@ router.get(
   async (req, res) => {
     try {
       const [[dbUser]] = await pool.query(
-        "SELECT id, role_id, is_active FROM users WHERE id = ?",
+        "SELECT id, role_id, is_active, active_session_id FROM users WHERE id = ?",
         [req.user.id]
       );
 
@@ -37,7 +37,11 @@ router.get(
         return res.status(403).json({ message: "Account disabled" });
       }
 
-      if (dbUser.role_id !== 3) {
+      if (dbUser.active_session_id) {
+        return res.status(409).json({ message: "Account already active on another device" });
+      }
+
+      if (dbUser.role_id === 1) {
         const schedule = await getActiveSchedule();
         if (!schedule) {
           return res.status(403).json({ message: "Login allowed only during scheduled tests" });
@@ -59,7 +63,7 @@ router.get(
         secure: false,      // true in production (HTTPS)
         sameSite: "lax",
         path: "/",
-        maxAge: 15 * 60 * 1000, // 15 minutes
+        maxAge: cookieMaxAgeMs,
       });
 
       const redirectUrl = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -72,73 +76,10 @@ router.get(
 );
 
 /**
- * Username/password login
+ * Username/password login removed (Google-only)
  */
-router.post("/login", async (req, res) => {
-  try {
-    const { identifier, password } = req.body;
-
-    if (!identifier || !password) {
-      return res.status(400).json({ error: "Missing credentials" });
-    }
-
-    const [users] = await pool.query(
-      `
-      SELECT id, full_name, email, password_hash, role_id
-      FROM users
-      WHERE (email = ? OR enrollment_no = ? OR roll_no = ? OR staff_id = ?)
-        AND is_active = true
-      LIMIT 1
-      `,
-      [identifier, identifier, identifier, identifier]
-    );
-
-    if (!users.length) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-
-    const user = users[0];
-    const isValid = await bcrypt.compare(password, user.password_hash || "");
-
-    if (!isValid) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-
-    if (user.role_id !== 3) {
-      const schedule = await getActiveSchedule();
-      if (!schedule) {
-        return res.status(403).json({ error: "Login allowed only during scheduled tests" });
-      }
-    }
-
-    const { token, sessionId } = signAccessToken(user);
-
-    await pool.query(
-      "UPDATE users SET active_session_id = ? WHERE id = ?",
-      [sessionId, user.id]
-    );
-
-    res.cookie("access_token", token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 15 * 60 * 1000,
-    });
-
-    res.json({
-      message: "Login successful",
-      user: {
-        id: user.id,
-        full_name: user.full_name,
-        email: user.email,
-        role_id: user.role_id,
-      },
-    });
-  } catch (err) {
-    console.error("Login error:", err);
-    res.status(500).json({ error: "Login failed" });
-  }
+router.post("/login", (req, res) => {
+  res.status(404).json({ error: "Password login disabled" });
 });
 
 /**

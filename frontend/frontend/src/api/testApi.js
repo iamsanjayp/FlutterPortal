@@ -1,4 +1,5 @@
-const API_BASE = "http://localhost:5000/api";
+const API_BASE_ROOT = import.meta.env.VITE_API_BASE || "http://localhost:5000";
+const API_BASE = `${API_BASE_ROOT}/api`;
 
 async function request(url, options = {}) {
   const res = await fetch(url, {
@@ -45,6 +46,20 @@ export function executeTest(payload) {
 // 4. Execute custom input
 export function executeCustom(payload) {
   return request(`${API_BASE}/execute/flutter/custom`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function executeUiPreview(payload) {
+  return request(`${API_BASE}/execute/flutter/ui-preview`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function executeUiSubmit(payload) {
+  return request(`${API_BASE}/execute/flutter/ui-submit`, {
     method: "POST",
     body: JSON.stringify(payload),
   });

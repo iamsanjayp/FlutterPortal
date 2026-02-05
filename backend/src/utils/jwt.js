@@ -12,7 +12,7 @@ export function signAccessToken(user) {
     },
     process.env.JWT_SECRET,
     {
-      expiresIn: process.env.JWT_EXPIRY,
+      expiresIn: process.env.JWT_EXPIRY || "7d",
     }
   );
 
