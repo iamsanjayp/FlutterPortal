@@ -146,6 +146,47 @@ router.post("/login", async (req, res) => {
 });
 
 /**
+ * Reset active session by email (admin secret code)
+ */
+router.post("/reset-session", async (req, res) => {
+  try {
+    const { email, secret } = req.body || {};
+    const expected = process.env.RESET_SESSION_SECRET;
+
+    if (!expected) {
+      return res.status(500).json({ error: "Reset disabled" });
+    }
+
+    if (!secret || secret !== expected) {
+      return res.status(403).json({ error: "Invalid reset code" });
+    }
+
+    if (!email) {
+      return res.status(400).json({ error: "Email required" });
+    }
+
+    const [[dbUser]] = await pool.query(
+      "SELECT id FROM users WHERE email = ?",
+      [email]
+    );
+
+    if (!dbUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    await pool.query(
+      "UPDATE users SET active_session_id = NULL WHERE id = ?",
+      [dbUser.id]
+    );
+
+    res.json({ message: "Session reset" });
+  } catch (err) {
+    console.error("Reset session error:", err);
+    res.status(500).json({ error: "Failed to reset session" });
+  }
+});
+
+/**
  * Login failure handler
  */
 router.get("/failed", (req, res) => {

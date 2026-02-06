@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import logo from "../../../logo.png";
 import { 
   LayoutDashboard, 
   BookOpen, 
@@ -50,8 +51,8 @@ export default function AdminLayout({ user, onLogout }) {
       <div className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 z-50 shadow-sm">
         <div className="h-full flex items-center justify-between px-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center shadow-md">
-              <span className="text-white font-bold text-lg">PC</span>
+            <div className="w-10 h-10 rounded-lg overflow-hidden shadow-md bg-white">
+              <img src={logo} alt="Portal logo" className="w-full h-full object-contain" />
             </div>
             <h1 className="text-xl font-semibold text-gray-800">PS Flutter Admin Portal</h1>
           </div>
