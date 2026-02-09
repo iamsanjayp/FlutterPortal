@@ -223,11 +223,23 @@ function SlotsTable({ slots, onEdit, onToggleActive, loading }) {
   );
 }
 
+// Helper to format date for datetime-local input in local timezone
+function formatLocalDateTime(dateString) {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 function SlotForm({ slot, onClose, teachers }) {
   const [formData, setFormData] = useState({
     name: slot?.name || '',
-    startAt: slot?.start_at ? new Date(slot.start_at).toISOString().slice(0, 16) : '',
-    endAt: slot?.end_at ? new Date(slot.end_at).toISOString().slice(0, 16) : '',
+    startAt: formatLocalDateTime(slot?.start_at),
+    endAt: formatLocalDateTime(slot?.end_at),
     durationMinutes: slot?.duration_minutes || 30,
     isActive: slot?.is_active ? true : false,
     liveTeacherId: slot?.live_teacher_id || '',
@@ -240,10 +252,16 @@ function SlotForm({ slot, onClose, teachers }) {
     e.preventDefault();
     try {
       setLoading(true);
+      // Convert datetime-local strings to ISO format with timezone
+      const dataToSend = {
+        ...formData,
+        startAt: formData.startAt ? new Date(formData.startAt).toISOString() : formData.startAt,
+        endAt: formData.endAt ? new Date(formData.endAt).toISOString() : formData.endAt,
+      };
       if (slot?.id) {
-        await updateSchedule(slot.id, formData);
+        await updateSchedule(slot.id, dataToSend);
       } else {
-        await createSchedule(formData);
+        await createSchedule(dataToSend);
       }
       onClose();
     } catch (err) {

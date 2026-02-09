@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Eye, CheckCircle, XCircle, Clock, User, Image as ImageIcon } from 'lucide-react';
+import { API_BASE_ROOT } from '../../api/apiBase.js';
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:5000";
+const API_BASE = API_BASE_ROOT;
 
 export default function AdminManualGrading() {
   const [submissions, setSubmissions] = useState([]);

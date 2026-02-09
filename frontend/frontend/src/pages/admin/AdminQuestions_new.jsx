@@ -11,8 +11,9 @@ import {
   uploadProblemReferenceImage,
   bulkImportProblems
 } from '../../api/adminApi';
+import { API_BASE_ROOT } from '../../api/apiBase.js';
 
-const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || import.meta.env.VITE_API_BASE || "http://localhost:5000";
+const API_ORIGIN = API_BASE_ROOT;
 
 export default function AdminQuestions() {
   const [questions, setQuestions] = useState([]);

@@ -6,6 +6,19 @@ import { getLatestSchedules } from "../utils/schedule.js";
 import bcrypt from "bcrypt";
 import xlsx from "xlsx";
 
+function toMysqlDateTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
 export async function getMetrics(req, res) {
   try {
     const [[questionRow]] = await pool.query(
@@ -136,6 +149,13 @@ export async function createSchedule(req, res) {
       return res.status(400).json({ error: "Missing schedule time" });
     }
 
+    const normalizedStartAt = toMysqlDateTime(startAt);
+    const normalizedEndAt = toMysqlDateTime(endAt);
+
+    if (!normalizedStartAt || !normalizedEndAt) {
+      return res.status(400).json({ error: "Invalid schedule time" });
+    }
+
     const [result] = await pool.query(
       `
       INSERT INTO test_schedules (name, start_at, end_at, duration_minutes, is_active, live_teacher_id, code_reviewer_id, ui_reviewer_id, created_at, updated_at)
@@ -143,8 +163,8 @@ export async function createSchedule(req, res) {
       `,
       [
         name || "Scheduled Test",
-        startAt,
-        endAt,
+        normalizedStartAt,
+        normalizedEndAt,
         durationMinutes || null,
         isActive ? 1 : 0,
         liveTeacherId || null,
@@ -165,6 +185,17 @@ export async function updateSchedule(req, res) {
     const { id } = req.params;
     const { name, startAt, endAt, durationMinutes, isActive, liveTeacherId, codeReviewerId, uiReviewerId } = req.body;
 
+    const normalizedStartAt = startAt ? toMysqlDateTime(startAt) : null;
+    const normalizedEndAt = endAt ? toMysqlDateTime(endAt) : null;
+
+    if (startAt && !normalizedStartAt) {
+      return res.status(400).json({ error: "Invalid start time" });
+    }
+
+    if (endAt && !normalizedEndAt) {
+      return res.status(400).json({ error: "Invalid end time" });
+    }
+
     const [result] = await pool.query(
       `
       UPDATE test_schedules
@@ -182,8 +213,8 @@ export async function updateSchedule(req, res) {
       `,
       [
         name ?? null,
-        startAt ?? null,
-        endAt ?? null,
+        normalizedStartAt ?? null,
+        normalizedEndAt ?? null,
         durationMinutes ?? null,
         typeof isActive === "boolean" ? (isActive ? 1 : 0) : null,
         liveTeacherId ?? null,

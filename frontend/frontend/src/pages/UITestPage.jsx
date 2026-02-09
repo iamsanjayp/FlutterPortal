@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchTest, fetchTestMeta, executeUiPreview, executeUiSubmit, finishTest } from "../api/testApi";
 import CodeEditor from "../components/CodeEditor";
+import { API_BASE_ROOT } from "../api/apiBase.js";
 
-const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || import.meta.env.VITE_API_BASE || "http://localhost:5000";
+const API_ORIGIN = API_BASE_ROOT;
 
 function buildInitialCodeMap(questions) {
   return questions.reduce((acc, question) => {

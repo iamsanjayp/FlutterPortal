@@ -1,5 +1,4 @@
-const API_BASE_ROOT = import.meta.env.VITE_API_BASE || "http://localhost:5000";
-const API_BASE = `${API_BASE_ROOT}/api`;
+import { API_BASE } from "./apiBase.js";
 
 async function request(url, options = {}) {
   const res = await fetch(url, {

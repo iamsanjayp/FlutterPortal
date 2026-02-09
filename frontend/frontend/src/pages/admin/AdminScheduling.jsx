@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchSchedules, createSchedule, updateSchedule } from "../../api/adminApi";
 
+// Helper to format date for datetime-local input in local timezone
+function formatLocalDateTime(dateString) {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 export default function AdminScheduling() {
   const [schedules, setSchedules] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -47,8 +59,8 @@ export default function AdminScheduling() {
     try {
       await createSchedule({
         name: form.name,
-        startAt: form.startAt,
-        endAt: form.endAt,
+        startAt: form.startAt ? new Date(form.startAt).toISOString() : form.startAt,
+        endAt: form.endAt ? new Date(form.endAt).toISOString() : form.endAt,
         durationMinutes: form.durationMinutes ? Number(form.durationMinutes) : null,
         isActive: form.isActive,
       });
@@ -65,8 +77,8 @@ export default function AdminScheduling() {
     try {
       await updateSchedule(selectedId, {
         name: form.name || null,
-        startAt: form.startAt || null,
-        endAt: form.endAt || null,
+        startAt: form.startAt ? new Date(form.startAt).toISOString() : null,
+        endAt: form.endAt ? new Date(form.endAt).toISOString() : null,
         durationMinutes: form.durationMinutes ? Number(form.durationMinutes) : null,
         isActive: form.isActive,
       });
@@ -188,8 +200,8 @@ export default function AdminScheduling() {
                   setSelectedId(String(schedule.id));
                   setForm({
                     name: schedule.name || "",
-                    startAt: schedule.start_at ? new Date(schedule.start_at).toISOString().slice(0, 16) : "",
-                    endAt: schedule.end_at ? new Date(schedule.end_at).toISOString().slice(0, 16) : "",
+                    startAt: schedule.start_at ? formatLocalDateTime(schedule.start_at) : "",
+                    endAt: schedule.end_at ? formatLocalDateTime(schedule.end_at) : "",
                     durationMinutes: schedule.duration_minutes || "",
                     isActive: Boolean(schedule.is_active),
                   });

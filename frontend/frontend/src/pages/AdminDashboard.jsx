@@ -107,8 +107,8 @@ export default function AdminDashboard({ onLogout }) {
     try {
       await createSchedule({
         name: scheduleForm.name,
-        startAt: scheduleForm.startAt,
-        endAt: scheduleForm.endAt,
+        startAt: scheduleForm.startAt ? new Date(scheduleForm.startAt).toISOString() : scheduleForm.startAt,
+        endAt: scheduleForm.endAt ? new Date(scheduleForm.endAt).toISOString() : scheduleForm.endAt,
         durationMinutes: scheduleForm.durationMinutes ? Number(scheduleForm.durationMinutes) : null,
         isActive: scheduleForm.isActive,
       });
@@ -126,8 +126,8 @@ export default function AdminDashboard({ onLogout }) {
     try {
       await updateSchedule(selectedScheduleId, {
         name: scheduleForm.name || null,
-        startAt: scheduleForm.startAt || null,
-        endAt: scheduleForm.endAt || null,
+        startAt: scheduleForm.startAt ? new Date(scheduleForm.startAt).toISOString() : null,
+        endAt: scheduleForm.endAt ? new Date(scheduleForm.endAt).toISOString() : null,
         durationMinutes: scheduleForm.durationMinutes ? Number(scheduleForm.durationMinutes) : null,
         isActive: scheduleForm.isActive,
       });
