@@ -39,12 +39,12 @@ services:
       JWT_EXPIRY: 7d
       JWT_COOKIE_MAX_AGE_MS: 604800000
       NODE_ENV: production
-      FRONTEND_URL: http://10.70.252.88:5173
-      FRONTEND_URLS: http://10.70.252.88:5173
+      FRONTEND_URL: http://10.110.23.23:5173
+      FRONTEND_URLS: http://10.110.23.23:5173
       RESET_SESSION_SECRET: ADMIN_RESET_123
       GOOGLE_CLIENT_ID: change_me
       GOOGLE_CLIENT_SECRET: change_me
-      GOOGLE_CALLBACK_URL: http://10.70.252.88:5000/auth/google/callback
+      GOOGLE_CALLBACK_URL: http://10.110.23.23:5000/auth/google/callback
     ports:
       - "5000:5000"
     volumes:

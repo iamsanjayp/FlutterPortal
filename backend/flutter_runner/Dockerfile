@@ -9,7 +9,15 @@ RUN flutter config --no-analytics
 RUN flutter precache
 
 # Install common fonts so Flutter uses Roboto/Noto instead of fallbacks
-RUN apt-get update \
+RUN set -eux; \
+	if [ -f /etc/apt/sources.list ]; then \
+		sed -i 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list; \
+		sed -i 's|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' /etc/apt/sources.list; \
+	fi; \
+	if [ -d /etc/apt/sources.list.d ]; then \
+		find /etc/apt/sources.list.d -type f \( -name "*.list" -o -name "*.sources" \) -exec sed -i 's|http://|https://|g' {} +; \
+	fi; \
+	apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update \
 	&& apt-get install -y --no-install-recommends \
 		fontconfig \
 		fonts-roboto \

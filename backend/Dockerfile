@@ -1,4 +1,5 @@
 # Backend Dockerfile
+FROM docker:28-cli AS dockercli
 FROM node:20-alpine
 
 WORKDIR /app
@@ -10,8 +11,8 @@ RUN npm install --production
 # Copy source
 COPY . .
 
-# Install docker CLI for spawning flutter-runner containers
-RUN apk add --no-cache docker-cli
+# Add docker CLI for spawning flutter-runner containers
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 
 ENV NODE_ENV=production
 
