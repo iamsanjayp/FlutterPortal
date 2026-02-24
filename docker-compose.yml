@@ -42,8 +42,8 @@ services:
       FRONTEND_URL: http://pcdpflutter.duckdns.org
       FRONTEND_URLS: http://pcdpflutter.duckdns.org
       RESET_SESSION_SECRET: ADMIN_RESET_123
-      GOOGLE_CLIENT_ID: 398032963329-gord9m6p56deeivnd54vgiesrojgf5bg.apps.googleusercontent.com
-      GOOGLE_CLIENT_SECRET: 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
+      GOOGLE_CLIENT_ID: change_me
+      GOOGLE_CLIENT_SECRET: change_me
       GOOGLE_CALLBACK_URL: http://pcdpflutter.duckdns.org/auth/google/callback
     ports:
       - "5000:5000"
