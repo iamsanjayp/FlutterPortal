@@ -2,9 +2,9 @@ CREATE DATABASE  IF NOT EXISTS `mobiledev_portal` /*!40100 DEFAULT CHARACTER SET
 USE `mobiledev_portal`;
 -- MySQL dump 10.13  Distrib 8.0.44, for Win64 (x86_64)
 --
--- Host: localhost    Database: mobiledev_portal
+-- Host: 127.0.0.1    Database: mobiledev_portal
 -- ------------------------------------------------------
--- Server version	8.0.44
+-- Server version	8.0.45
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -39,7 +39,7 @@ CREATE TABLE `student_levels` (
 
 LOCK TABLES `student_levels` WRITE;
 /*!40000 ALTER TABLE `student_levels` DISABLE KEYS */;
-INSERT INTO `student_levels` VALUES (1,'1C','2026-02-05 09:08:20'),(2,'1C','2026-02-05 09:00:11'),(11,'1A','2026-02-05 04:50:19'),(12,'1A','2026-02-05 04:50:19'),(13,'1A','2026-02-05 04:50:19'),(14,'1A','2026-02-05 04:50:19'),(15,'1A','2026-02-05 04:50:19'),(16,'1A','2026-02-05 04:50:19'),(17,'1A','2026-02-05 04:50:19');
+INSERT INTO `student_levels` VALUES (3,'2A','2026-02-19 08:41:33'),(26,'2B','2026-02-19 08:55:41');
 /*!40000 ALTER TABLE `student_levels` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -52,4 +52,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-02-05 15:49:01
+-- Dump completed on 2026-02-24 13:46:10

@@ -2,9 +2,9 @@ CREATE DATABASE  IF NOT EXISTS `mobiledev_portal` /*!40100 DEFAULT CHARACTER SET
 USE `mobiledev_portal`;
 -- MySQL dump 10.13  Distrib 8.0.44, for Win64 (x86_64)
 --
--- Host: localhost    Database: mobiledev_portal
+-- Host: 127.0.0.1    Database: mobiledev_portal
 -- ------------------------------------------------------
--- Server version	8.0.44
+-- Server version	8.0.45
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -35,7 +35,7 @@ CREATE TABLE `test_session_questions` (
   KEY `problem_id` (`problem_id`),
   CONSTRAINT `test_session_questions_ibfk_1` FOREIGN KEY (`test_session_id`) REFERENCES `test_sessions` (`id`) ON DELETE CASCADE,
   CONSTRAINT `test_session_questions_ibfk_2` FOREIGN KEY (`problem_id`) REFERENCES `problems` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=52 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -44,7 +44,7 @@ CREATE TABLE `test_session_questions` (
 
 LOCK TABLES `test_session_questions` WRITE;
 /*!40000 ALTER TABLE `test_session_questions` DISABLE KEYS */;
-INSERT INTO `test_session_questions` VALUES (5,2,1,1,'2026-01-30 06:06:25'),(6,2,2,2,'2026-01-30 06:06:25'),(7,3,1,1,'2026-01-30 13:47:41'),(8,3,5,2,'2026-01-30 13:47:41'),(9,4,8,1,'2026-01-30 13:50:17'),(10,5,8,1,'2026-01-30 14:50:28'),(11,6,8,1,'2026-01-30 16:51:07'),(12,7,9,1,'2026-01-31 03:20:26'),(13,8,9,1,'2026-01-31 04:31:20'),(14,9,9,1,'2026-02-02 07:37:34'),(15,10,8,1,'2026-02-02 08:40:33'),(16,11,9,1,'2026-02-02 09:22:44'),(17,12,8,1,'2026-02-02 09:55:35'),(18,13,8,1,'2026-02-02 16:35:57'),(19,14,9,1,'2026-02-02 17:04:57'),(21,16,8,1,'2026-02-04 04:27:15'),(22,17,8,1,'2026-02-04 04:43:41'),(23,18,7,1,'2026-02-04 05:32:49'),(24,18,1,2,'2026-02-04 05:32:49'),(29,19,11,1,'2026-02-04 09:29:21'),(30,20,7,1,'2026-02-05 05:52:44'),(31,20,2,2,'2026-02-05 05:52:44'),(33,21,11,1,'2026-02-05 05:55:32'),(34,22,10,1,'2026-02-05 07:49:13'),(35,23,4,1,'2026-02-05 09:00:29'),(36,23,1,2,'2026-02-05 09:00:29'),(38,24,10,1,'2026-02-05 09:04:41');
+INSERT INTO `test_session_questions` VALUES (50,33,23,1,'2026-02-19 05:49:23'),(51,38,23,1,'2026-02-19 08:43:25');
 /*!40000 ALTER TABLE `test_session_questions` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -57,4 +57,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-02-05 15:49:01
+-- Dump completed on 2026-02-24 13:46:10
