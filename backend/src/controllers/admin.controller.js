@@ -423,8 +423,8 @@ export async function getSessions(req, res) {
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-        const [rows] = await pool.query(
-          `
+    const [rows] = await pool.query(
+      `
           SELECT ts.id, ts.user_id, ts.level, ts.status, ts.started_at, ts.duration_minutes,
                  u.full_name, u.email, u.roll_no,
                  sch.id AS schedule_id, sch.name AS schedule_name
@@ -435,8 +435,8 @@ export async function getSessions(req, res) {
           ORDER BY ts.started_at DESC
           LIMIT 50
           `,
-          params
-        );
+      params
+    );
 
     res.json({ sessions: rows });
   } catch (err) {
@@ -862,9 +862,9 @@ export async function getStudents(req, res) {
 
     const roleList = roles
       ? String(roles)
-          .split(",")
-          .map(value => value.trim())
-          .filter(Boolean)
+        .split(",")
+        .map(value => value.trim())
+        .filter(Boolean)
       : role
         ? [String(role).trim()]
         : [];
@@ -1299,7 +1299,7 @@ export async function getProblems(req, res) {
   try {
     const [rows] = await pool.query(
       `
-      SELECT id, level, title, description, starter_code, is_active, reference_image_url, ui_required_widgets
+      SELECT id, level, title, description, starter_code, is_active, reference_image_url, ui_required_widgets, resource_urls
       FROM problems
       ORDER BY level, id
       `
@@ -1454,7 +1454,7 @@ function normalizeUiWidgets(input) {
         const cleaned = parsed.map(v => String(v || "").trim()).filter(Boolean);
         return cleaned.length ? JSON.stringify(cleaned) : null;
       }
-    } catch {}
+    } catch { }
 
     const cleaned = raw
       .split(/\r?\n|,/)
@@ -1596,6 +1596,94 @@ export async function uploadReferenceImage(req, res) {
   }
 }
 
+export async function uploadResourceFiles(req, res) {
+  try {
+    const { id } = req.params;
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    const uploadsDir = path.resolve(process.cwd(), "uploads", "ui_resources");
+    fs.mkdirSync(uploadsDir, { recursive: true });
+
+    // Get existing resource_urls
+    const [[problem]] = await pool.query(
+      "SELECT resource_urls FROM problems WHERE id = ?",
+      [id]
+    );
+    if (!problem) {
+      return res.status(404).json({ error: "Problem not found" });
+    }
+
+    let existing = [];
+    if (problem.resource_urls) {
+      try { existing = JSON.parse(problem.resource_urls); } catch { }
+    }
+    if (!Array.isArray(existing)) existing = [];
+
+    const newUrls = [];
+    for (const file of req.files) {
+      const ext = path.extname(file.originalname) || ".png";
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const filename = `problem-${id}-resource-${Date.now()}-${safeName}`;
+      const destPath = path.join(uploadsDir, filename);
+      fs.writeFileSync(destPath, file.buffer);
+      const publicUrl = `/uploads/ui_resources/${filename}`;
+      newUrls.push(publicUrl);
+    }
+
+    const allUrls = [...existing, ...newUrls];
+    await pool.query(
+      "UPDATE problems SET resource_urls = ? WHERE id = ?",
+      [JSON.stringify(allUrls), id]
+    );
+
+    res.json({ message: "Resources uploaded", resourceUrls: allUrls });
+  } catch (err) {
+    console.error("Upload resource files error:", err);
+    res.status(500).json({ error: "Failed to upload resources" });
+  }
+}
+
+export async function deleteResourceFile(req, res) {
+  try {
+    const { id } = req.params;
+    const { resourceUrl } = req.body;
+    if (!resourceUrl) {
+      return res.status(400).json({ error: "Missing resourceUrl" });
+    }
+
+    const [[problem]] = await pool.query(
+      "SELECT resource_urls FROM problems WHERE id = ?",
+      [id]
+    );
+    if (!problem) {
+      return res.status(404).json({ error: "Problem not found" });
+    }
+
+    let existing = [];
+    if (problem.resource_urls) {
+      try { existing = JSON.parse(problem.resource_urls); } catch { }
+    }
+    if (!Array.isArray(existing)) existing = [];
+
+    const updated = existing.filter(u => u !== resourceUrl);
+
+    // Delete from disk
+    const filePath = path.resolve(process.cwd(), resourceUrl.replace(/^\//, ""));
+    try { fs.unlinkSync(filePath); } catch { }
+
+    await pool.query(
+      "UPDATE problems SET resource_urls = ? WHERE id = ?",
+      [updated.length ? JSON.stringify(updated) : null, id]
+    );
+
+    res.json({ message: "Resource deleted", resourceUrls: updated });
+  } catch (err) {
+    console.error("Delete resource file error:", err);
+    res.status(500).json({ error: "Failed to delete resource" });
+  }
+}
 
 export async function getProblemTestCases(req, res) {
   try {

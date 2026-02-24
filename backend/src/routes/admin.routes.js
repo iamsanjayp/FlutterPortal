@@ -31,6 +31,8 @@ import {
 	createLevel,
 	updateLevel,
 	uploadReferenceImage,
+	uploadResourceFiles,
+	deleteResourceFile,
 	getProblemTestCases,
 	createTestCase,
 	updateTestCase,
@@ -85,6 +87,8 @@ router.get("/levels", authorizeRoles(2, 3), getLevels);
 router.post("/levels", authorizeRoles(3), createLevel);
 router.patch("/levels/:code", authorizeRoles(3), updateLevel);
 router.post("/problems/:id/reference-image", authorizeRoles(2, 3), upload.single("image"), uploadReferenceImage);
+router.post("/problems/:id/resources", authorizeRoles(2, 3), upload.array("files", 10), uploadResourceFiles);
+router.delete("/problems/:id/resources", authorizeRoles(2, 3), deleteResourceFile);
 router.get("/problems/:id/test-cases", authorizeRoles(3), getProblemTestCases);
 router.post("/problems/:id/test-cases", authorizeRoles(3), createTestCase);
 router.patch("/test-cases/:id", authorizeRoles(3), updateTestCase);

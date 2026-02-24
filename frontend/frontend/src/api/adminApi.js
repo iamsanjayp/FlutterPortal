@@ -306,6 +306,41 @@ export async function uploadProblemReferenceImage(problemId, file) {
   return res.json();
 }
 
+export async function uploadProblemResources(problemId, files) {
+  const formData = new FormData();
+  if (files && files.length) {
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
+  }
+
+  const res = await fetch(`${API_BASE}/api/admin/problems/${problemId}/resources`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `API error (${res.status})`);
+    }
+    throw new Error(payload.error || payload.message || `API error (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export function deleteProblemResource(problemId, resourceUrl) {
+  return request(`${API_BASE}/api/admin/problems/${problemId}/resources`, {
+    method: "DELETE",
+    body: JSON.stringify({ resourceUrl }),
+  });
+}
+
 export function fetchTestCases(problemId) {
   return request(`${API_BASE}/api/admin/problems/${problemId}/test-cases`);
 }

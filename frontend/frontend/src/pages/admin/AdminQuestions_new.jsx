@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit } from 'lucide-react';
-import { 
-  fetchProblems, 
-  createProblem, 
-  updateProblem, 
-  fetchTestCases, 
+import {
+  fetchProblems,
+  createProblem,
+  updateProblem,
+  fetchTestCases,
   createTestCase,
   deleteProblem,
   fetchLevels,
   uploadProblemReferenceImage,
+  uploadProblemResources,
+  deleteProblemResource,
   bulkImportProblems
 } from '../../api/adminApi';
 import { API_BASE_ROOT } from '../../api/apiBase.js';
@@ -125,7 +127,7 @@ export default function AdminQuestions() {
       </div>
 
       {showEditor ? (
-        <QuestionEditor 
+        <QuestionEditor
           question={selectedQuestion}
           levels={levels}
           onSave={(saved) => {
@@ -135,7 +137,7 @@ export default function AdminQuestions() {
           onCancel={() => setShowEditor(false)}
         />
       ) : (
-        <QuestionsTable 
+        <QuestionsTable
           questions={questions}
           onEdit={handleEdit}
           onDelete={handleDelete}
@@ -180,9 +182,8 @@ function QuestionsTable({ questions, onEdit, onDelete, loading }) {
                 </span>
               </td>
               <td className="px-6 py-4">
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  q.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                }`}>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${q.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                  }`}>
                   {q.is_active ? 'Active' : 'Inactive'}
                 </span>
               </td>
@@ -223,7 +224,7 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed.join('\n');
-    } catch {}
+    } catch { }
     return raw;
   })();
 
@@ -236,6 +237,12 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
     isActive: question?.is_active ?? true,
     referenceImageUrl: question?.reference_image_url || '',
     uiRequiredWidgets: initialUiRequiredWidgets,
+    resourceUrls: (() => {
+      try {
+        const parsed = JSON.parse(question?.resource_urls || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch { return []; }
+    })(),
   });
 
   const [testCases, setTestCases] = useState([]);
@@ -321,6 +328,37 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
     }
   }
 
+  async function handleUploadResources(e) {
+    if (!question?.id) {
+      alert('Please save the question first before uploading resources');
+      return;
+    }
+
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      setUploading(true);
+      const res = await uploadProblemResources(question.id, files);
+      setFormData(prev => ({ ...prev, resourceUrls: res.resourceUrls }));
+      e.target.value = ''; // Reset input
+    } catch (err) {
+      alert('Failed to upload resources: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDeleteResource(url) {
+    if (!confirm('Delete this resource?')) return;
+    try {
+      const res = await deleteProblemResource(question.id, url);
+      setFormData(prev => ({ ...prev, resourceUrls: res.resourceUrls }));
+    } catch (err) {
+      alert('Failed to delete resource: ' + err.message);
+    }
+  }
+
 
 
   return (
@@ -329,7 +367,7 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
       <div className="space-y-6">
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Question Details</h3>
-          
+
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
@@ -447,6 +485,46 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
               )}
 
               <div className="pt-4 border-t border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-800 mb-2">Resource Bundles</h4>
+                <p className="text-xs text-gray-500 mb-3">
+                  Upload images, fonts, or other assets. These will be available in the <code>assets/images/</code> folder during tests.
+                </p>
+
+                <div className="space-y-3">
+                  <input
+                    type="file"
+                    multiple
+                    onChange={handleUploadResources}
+                    className="block w-full text-sm text-gray-600"
+                  />
+
+                  {formData.resourceUrls.length > 0 && (
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {formData.resourceUrls.map((url, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <span className="text-xs font-mono text-gray-600 truncate max-w-[150px]">
+                              {url.split('/').pop()}
+                            </span>
+                            <a href={`${API_ORIGIN}${url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">
+                              View
+                            </a>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteResource(url)}
+                            className="text-red-500 hover:text-red-700 p-1"
+                            title="Delete"
+                          >
+                            <span className="text-xs">✕</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-gray-200">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Required Widgets (one per line)
                 </label>
@@ -467,108 +545,108 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Test Cases</h3>
 
-          {/* Sample Test Cases */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-gray-700">Sample Test Cases</h4>
-              <span className="text-xs text-gray-500">Visible to students (2 required)</span>
-            </div>
-            <div className="space-y-2">
-              {sampleTestCases.map((tc, idx) => (
-                <TestCaseCard key={tc.id} testCase={tc} index={idx + 1} />
-              ))}
-              {sampleTestCases.length === 0 && (
-                <p className="text-sm text-gray-500 py-4 text-center bg-gray-50 rounded-lg">
-                  No sample test cases yet
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Hidden Test Cases */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-gray-700">Hidden Test Cases</h4>
-              <span className="text-xs text-gray-500">Hidden from students (8 required)</span>
-            </div>
-            <div className="space-y-2">
-              {hiddenTestCases.map((tc, idx) => (
-                <TestCaseCard key={tc.id} testCase={tc} index={idx + 1} isHidden />
-              ))}
-              {hiddenTestCases.length === 0 && (
-                <p className="text-sm text-gray-500 py-4 text-center bg-gray-50 rounded-lg">
-                  No hidden test cases yet
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Add Test Case Form */}
-          {question?.id && (
-            <div className="border-t border-gray-200 pt-4">
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">Add Test Case</h4>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Input</label>
-                  <input
-                    type="text"
-                    value={testCaseForm.input}
-                    onChange={(e) => setTestCaseForm({ ...testCaseForm, input: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
-                    placeholder="hello"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Expected Output</label>
-                  <input
-                    type="text"
-                    value={testCaseForm.expectedOutput}
-                    onChange={(e) => setTestCaseForm({ ...testCaseForm, expectedOutput: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
-                    placeholder="olleh"
-                  />
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={testCaseForm.isHidden}
-                      onChange={(e) => setTestCaseForm({ ...testCaseForm, isHidden: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <span className="text-xs font-medium text-gray-700">Hidden from students</span>
-                  </label>
-
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs font-medium text-gray-600">Order:</label>
-                    <input
-                      type="number"
-                      value={testCaseForm.orderNo}
-                      onChange={(e) => setTestCaseForm({ ...testCaseForm, orderNo: parseInt(e.target.value) })}
-                      className="w-16 px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleAddTestCase}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                >
-                  Add Test Case
-                </button>
+            {/* Sample Test Cases */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-gray-700">Sample Test Cases</h4>
+                <span className="text-xs text-gray-500">Visible to students (2 required)</span>
+              </div>
+              <div className="space-y-2">
+                {sampleTestCases.map((tc, idx) => (
+                  <TestCaseCard key={tc.id} testCase={tc} index={idx + 1} />
+                ))}
+                {sampleTestCases.length === 0 && (
+                  <p className="text-sm text-gray-500 py-4 text-center bg-gray-50 rounded-lg">
+                    No sample test cases yet
+                  </p>
+                )}
               </div>
             </div>
-          )}
 
-          {!question?.id && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <p className="text-sm text-yellow-700">
-                Save the question first before adding test cases
-              </p>
+            {/* Hidden Test Cases */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-gray-700">Hidden Test Cases</h4>
+                <span className="text-xs text-gray-500">Hidden from students (8 required)</span>
+              </div>
+              <div className="space-y-2">
+                {hiddenTestCases.map((tc, idx) => (
+                  <TestCaseCard key={tc.id} testCase={tc} index={idx + 1} isHidden />
+                ))}
+                {hiddenTestCases.length === 0 && (
+                  <p className="text-sm text-gray-500 py-4 text-center bg-gray-50 rounded-lg">
+                    No hidden test cases yet
+                  </p>
+                )}
+              </div>
             </div>
-          )}
+
+            {/* Add Test Case Form */}
+            {question?.id && (
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Add Test Case</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Input</label>
+                    <input
+                      type="text"
+                      value={testCaseForm.input}
+                      onChange={(e) => setTestCaseForm({ ...testCaseForm, input: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
+                      placeholder="hello"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Expected Output</label>
+                    <input
+                      type="text"
+                      value={testCaseForm.expectedOutput}
+                      onChange={(e) => setTestCaseForm({ ...testCaseForm, expectedOutput: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
+                      placeholder="olleh"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={testCaseForm.isHidden}
+                        onChange={(e) => setTestCaseForm({ ...testCaseForm, isHidden: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-xs font-medium text-gray-700">Hidden from students</span>
+                    </label>
+
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs font-medium text-gray-600">Order:</label>
+                      <input
+                        type="number"
+                        value={testCaseForm.orderNo}
+                        onChange={(e) => setTestCaseForm({ ...testCaseForm, orderNo: parseInt(e.target.value) })}
+                        className="w-16 px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleAddTestCase}
+                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  >
+                    Add Test Case
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!question?.id && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-sm text-yellow-700">
+                  Save the question first before adding test cases
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -87,13 +87,13 @@ export async function executeTest(req, res) {
 
     const effectiveTests = useFullFailFallback
       ? preparedCases.map(tc => ({
-          name: `TC_${tc.id}`,
-          status: "FAIL",
-          testCaseId: tc.id,
-        }))
+        name: `TC_${tc.id}`,
+        status: "FAIL",
+        testCaseId: tc.id,
+      }))
       : rawTests.length
-      ? rawTests
-      : preparedCases.map(tc => ({
+        ? rawTests
+        : preparedCases.map(tc => ({
           name: `TC_${tc.id}`,
           status: "FAIL",
           testCaseId: tc.id,
@@ -224,7 +224,17 @@ export async function executeUiPreview(req, res) {
       });
     }
 
-    const runResult = await runFlutterUI(code);
+    // Fetch resource URLs for this problem
+    const [[previewProblemRow]] = await pool.query(
+      "SELECT resource_urls FROM problems WHERE id = ?",
+      [problemId]
+    );
+    let previewResourceUrls = [];
+    if (previewProblemRow?.resource_urls) {
+      try { previewResourceUrls = JSON.parse(previewProblemRow.resource_urls); } catch { }
+    }
+
+    const runResult = await runFlutterUI(code, Array.isArray(previewResourceUrls) ? previewResourceUrls : []);
     if (runResult.status !== "OK" || !runResult.previewBuffer) {
       const detail = runResult?.rawOutput
         ? runResult.rawOutput.slice(-1200)
@@ -275,7 +285,7 @@ export async function executeUiSubmit(req, res) {
     }
 
     const [[problemRow]] = await pool.query(
-      "SELECT ui_required_widgets FROM problems WHERE id = ?",
+      "SELECT ui_required_widgets, resource_urls FROM problems WHERE id = ?",
       [problemId]
     );
 
@@ -284,7 +294,12 @@ export async function executeUiSubmit(req, res) {
       ? scoreUiCodeCombined(code, uiRequirements)
       : scoreUiCode(code);
 
-    const runResult = await runFlutterUI(code);
+    let submitResourceUrls = [];
+    if (problemRow?.resource_urls) {
+      try { submitResourceUrls = JSON.parse(problemRow.resource_urls); } catch { }
+    }
+
+    const runResult = await runFlutterUI(code, Array.isArray(submitResourceUrls) ? submitResourceUrls : []);
     if (runResult.status !== "OK" || !runResult.previewBuffer) {
       const detail = runResult?.rawOutput
         ? runResult.rawOutput.slice(-1200)
@@ -400,7 +415,7 @@ function parseUiRequirements(raw) {
       const cleaned = parsed.map(v => String(v || "").trim()).filter(Boolean);
       return cleaned.length ? cleaned : null;
     }
-  } catch {}
+  } catch { }
 
   const cleaned = text
     .split(/\r?\n|,/)

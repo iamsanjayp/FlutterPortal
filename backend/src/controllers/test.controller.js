@@ -221,10 +221,15 @@ export async function getTestData(req, res) {
       }));
     } else {
       const [[problemRow]] = await pool.query(
-        "SELECT reference_image_url FROM problems WHERE id = ?",
+        "SELECT reference_image_url, resource_urls FROM problems WHERE id = ?",
         [q.id]
       );
       q.referenceImageUrl = problemRow?.reference_image_url || null;
+      let parsedResources = [];
+      if (problemRow?.resource_urls) {
+        try { parsedResources = JSON.parse(problemRow.resource_urls); } catch { }
+      }
+      q.resourceUrls = Array.isArray(parsedResources) ? parsedResources : [];
     }
   }
 
@@ -254,7 +259,7 @@ function parseJsonArray(value) {
       if (Array.isArray(parsed)) {
         return parsed.map(v => String(v || "").trim()).filter(Boolean);
       }
-    } catch {}
+    } catch { }
 
     return raw
       .split(/\r?\n|,/)

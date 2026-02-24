@@ -66,8 +66,8 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
           const scheduleEndAt = sessionMeta.ignoreScheduleEnd
             ? null
             : sessionMeta.scheduleEndAt
-            ? new Date(sessionMeta.scheduleEndAt).getTime()
-            : null;
+              ? new Date(sessionMeta.scheduleEndAt).getTime()
+              : null;
           const endAt = scheduleEndAt ? Math.min(durationEndAt, scheduleEndAt) : durationEndAt;
           setTimerEndAt(endAt);
           const now = Date.now() - resolvedOffset;
@@ -160,8 +160,8 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
         const scheduleEndAt = meta.ignoreScheduleEnd
           ? null
           : meta.scheduleEndAt
-          ? new Date(meta.scheduleEndAt).getTime()
-          : null;
+            ? new Date(meta.scheduleEndAt).getTime()
+            : null;
         const endAt = scheduleEndAt ? Math.min(durationEndAt, scheduleEndAt) : durationEndAt;
         if (endAt !== timerEndAt) {
           setTimerEndAt(endAt);
@@ -279,8 +279,8 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
         const scheduleEndAt = meta.ignoreScheduleEnd
           ? null
           : meta.scheduleEndAt
-          ? new Date(meta.scheduleEndAt).getTime()
-          : null;
+            ? new Date(meta.scheduleEndAt).getTime()
+            : null;
         const endAt = scheduleEndAt ? Math.min(durationEndAt, scheduleEndAt) : durationEndAt;
         if (endAt > now) {
           setTimerEndAt(endAt);
@@ -338,11 +338,10 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
             <button
               key={question.id}
               onClick={() => handleSelectQuestion(index)}
-              className={`px-4 py-2 rounded-md border text-sm font-medium transition ${
-                index === activeIndex
+              className={`px-4 py-2 rounded-md border text-sm font-medium transition ${index === activeIndex
                   ? "bg-blue-600 text-white border-blue-600"
                   : "bg-white text-gray-700 border-gray-200 hover:border-blue-300"
-              }`}
+                }`}
             >
               Question {index + 1}
             </button>
@@ -356,6 +355,41 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
             <div className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">
               {activeQuestion?.description || "No description provided."}
             </div>
+
+            {activeQuestion?.resourceUrls?.length > 0 && (
+              <div className="mt-5 mb-5 p-4 bg-blue-50 border border-blue-100 rounded-lg">
+                <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                  </svg>
+                  Provided Resources
+                </h4>
+                <p className="text-xs text-blue-700 mb-3">
+                  The following assets are available for use in your code. Use the exact paths below:
+                </p>
+                <div className="grid grid-cols-1 gap-2">
+                  {activeQuestion.resourceUrls.map((url, idx) => {
+                    const filename = url.split('/').pop();
+                    const assetPath = `assets/images/${filename}`;
+                    return (
+                      <div key={idx} className="flex items-center gap-3 bg-white p-2 rounded border border-blue-100">
+                        <img
+                          src={`${API_ORIGIN}${url}`}
+                          alt="Resource thumbnail"
+                          className="w-10 h-10 object-contain bg-gray-50 rounded"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-gray-900 truncate">{filename}</div>
+                          <code className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 block w-fit mt-0.5 select-all">
+                            {assetPath}
+                          </code>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {activeQuestion?.uiRequiredWidgets?.length > 0 && (
               <div className="mt-5 space-y-4">
@@ -424,13 +458,11 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
               <CodeEditor code={code} setCode={handleCodeChange} />
             </div>
             {status && (
-              <div className={`mt-4 p-4 rounded-lg border ${
-                isAwaitingManual ? "bg-amber-50 border-amber-200" : status === "PASS" ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
-              }`}>
+              <div className={`mt-4 p-4 rounded-lg border ${isAwaitingManual ? "bg-amber-50 border-amber-200" : status === "PASS" ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+                }`}>
                 <div className="flex items-center justify-between">
-                  <span className={`text-lg font-bold ${
-                    isAwaitingManual ? "text-amber-700" : status === "PASS" ? "text-green-700" : "text-red-700"
-                  }`}>
+                  <span className={`text-lg font-bold ${isAwaitingManual ? "text-amber-700" : status === "PASS" ? "text-green-700" : "text-red-700"
+                    }`}>
                     {statusLabel} {score !== null ? `- Auto Score: ${score}%` : ""}
                   </span>
                   {score !== null && (

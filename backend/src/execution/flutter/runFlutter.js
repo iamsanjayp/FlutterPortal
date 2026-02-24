@@ -141,7 +141,7 @@ export async function runFlutterCode(code, { functionName, cases }) {
     } finally {
       try {
         exec(`docker rm -f ${containerName}`);
-      } catch {}
+      } catch { }
       try {
         fs.rmSync(workDir, { recursive: true, force: true });
       } catch {
@@ -157,7 +157,7 @@ export async function runFlutterCode(code, { functionName, cases }) {
   });
 }
 
-export async function runFlutterUI(code) {
+export async function runFlutterUI(code, resourceUrls = []) {
   return new Promise(async (resolve) => {
     const runId = uuidv4();
     const workDir = path.join(BASE_DIR, "runs", runId);
@@ -169,17 +169,64 @@ export async function runFlutterUI(code) {
 
 
     // Clean any host-generated Flutter artifacts that may contain Windows paths
-    try { fs.rmSync(path.join(workDir, ".dart_tool"), { recursive: true, force: true }); } catch {}
-    try { fs.rmSync(path.join(workDir, ".packages"), { recursive: true, force: true }); } catch {}
-    try { fs.rmSync(path.join(workDir, ".flutter-plugins"), { recursive: true, force: true }); } catch {}
-    try { fs.rmSync(path.join(workDir, ".flutter-plugins-dependencies"), { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(path.join(workDir, ".dart_tool"), { recursive: true, force: true }); } catch { }
+    try { fs.rmSync(path.join(workDir, ".packages"), { recursive: true, force: true }); } catch { }
+    try { fs.rmSync(path.join(workDir, ".flutter-plugins"), { recursive: true, force: true }); } catch { }
+    try { fs.rmSync(path.join(workDir, ".flutter-plugins-dependencies"), { recursive: true, force: true }); } catch { }
 
     fs.writeFileSync(
       path.join(workDir, "lib", "solution.dart"),
       ensureUiImport(code)
     );
 
-    
+    // Copy question-level resource files into workspace assets
+    const copiedAssetNames = [];
+    if (Array.isArray(resourceUrls) && resourceUrls.length > 0) {
+      const assetsImagesDir = path.join(workDir, "assets", "images");
+      fs.mkdirSync(assetsImagesDir, { recursive: true });
+
+      for (const url of resourceUrls) {
+        try {
+          const srcPath = path.resolve(process.cwd(), url.replace(/^\//, ""));
+          console.log(`[UI TEST] Copying resource from ${srcPath}`);
+          if (fs.existsSync(srcPath)) {
+            const basename = path.basename(srcPath);
+            fs.copyFileSync(srcPath, path.join(assetsImagesDir, basename));
+            copiedAssetNames.push(basename);
+          } else {
+            console.error(`[UI TEST] Resource not found at ${srcPath}`);
+          }
+        } catch (cpErr) {
+          console.error(`[UI TEST] Failed to copy resource ${url}:`, cpErr.message);
+        }
+      }
+      // Delay to allow file system to settle
+      await sleep(500);
+
+      // Update pubspec.yaml to declare assets if any were copied
+      if (copiedAssetNames.length > 0) {
+        console.log(`[UI TEST] Updating pubspec.yaml with ${copiedAssetNames.length} assets`);
+        const pubspecPath = path.join(workDir, "pubspec.yaml");
+        let pubspec = fs.readFileSync(pubspecPath, "utf-8");
+        // Add assets section if not present, or append to existing
+        if (!pubspec.includes("assets:")) {
+          // Add assets section under flutter:
+          pubspec = pubspec.replace(
+            /^(flutter:\s*\n)/m,
+            `$1  assets:\n    - assets/images/\n`
+          );
+        } else if (!pubspec.includes("assets/images/")) {
+          pubspec = pubspec.replace(
+            /^(\s*assets:\s*\n)/m,
+            `$1    - assets/images/\n`
+          );
+        }
+        fs.writeFileSync(pubspecPath, pubspec);
+        // Delay to allow file write to settle
+        await sleep(500);
+      }
+    }
+
 
     // Allow optional host network mode via env vars
     const useHostNetworkUI = process.env.FLUTTER_RUNNER_USE_HOST_NETWORK === "true";
@@ -205,7 +252,7 @@ export async function runFlutterUI(code) {
     const timeoutHandle = setTimeout(async () => {
       try {
         await execAsync(`docker rm -f ${containerName}`, { timeout: 30000 });
-      } catch {}
+      } catch { }
       resolve({
         status: "ERROR",
         message: `UI render timed out after ${uiTimeoutMs / 1000}s`,
@@ -277,7 +324,7 @@ export async function runFlutterUI(code) {
     }
 
     // Clean up container after copy attempt
-    await execAsync(`docker rm -f ${containerName}`, { timeout: 30000 }).catch(() => {});
+    await execAsync(`docker rm -f ${containerName}`, { timeout: 30000 }).catch(() => { });
 
     console.log(`[UI TEST] Checking preview at: ${previewPath}`);
     const previewExists = fs.existsSync(previewPath);
@@ -299,7 +346,7 @@ export async function runFlutterUI(code) {
         setTimeout(() => {
           try {
             fs.rmSync(workDir, { recursive: true, force: true });
-          } catch {}
+          } catch { }
         }, 500);
       }
       return;
@@ -403,7 +450,7 @@ export async function runFlutterCustom(code, { functionName, dartArgs }) {
     } finally {
       try {
         exec(`docker rm -f ${containerName}`);
-      } catch {}
+      } catch { }
       try {
         fs.rmSync(workDir, { recursive: true, force: true });
       } catch {

@@ -29,14 +29,35 @@ void main() {
     );
 
     await tester.pump();
-    await tester.binding.runAsync(() async {
-      final context = tester.element(find.byType(MaterialApp));
-      final images = tester.widgetList<Image>(find.byType(Image));
-      for (final img in images) {
-        await precacheImage(img.image, context);
+    
+    // robust wait for images
+    await tester.runAsync(() async {
+      final images = find.byType(Image);
+      if (images.evaluate().isNotEmpty) {
+        final imageWidgets = tester.widgetList<Image>(images);
+        for (final image in imageWidgets) {
+          final Completer<void> completer = Completer<void>();
+          final ImageStream stream = image.image.resolve(ImageConfiguration.empty);
+          final ImageStreamListener listener = ImageStreamListener(
+            (ImageInfo info, bool synchronousCall) {
+              if (!completer.isCompleted) completer.complete();
+            },
+            onError: (dynamic exception, StackTrace? stackTrace) {
+              if (!completer.isCompleted) completer.complete();
+            },
+          );
+          stream.addListener(listener);
+          // Wait for completion or timeout
+          await Future.any([
+            completer.future,
+            Future.delayed(const Duration(seconds: 2)),
+          ]);
+          stream.removeListener(listener);
+        }
       }
-      await Future.delayed(const Duration(seconds: 1));
+      await Future.delayed(const Duration(milliseconds: 500));
     });
+
     await tester.pumpAndSettle(const Duration(seconds: 2));
 
     // Capture screenshot without golden comparison
