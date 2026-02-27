@@ -1,28 +1,41 @@
 import pool from "../config/db.js";
 
 const LEVELS = [
-  "1A",
-  "1B",
-  "1C",
-  "2A",
-  "2B",
-  "2C",
-  "3A",
-  "3B",
-  "3C",
-  "4A",
-  "4B",
-  "4C",
-  "5A",
-  "5B",
-  "5C",
+  "1A", "1B", "1C",
+  "2A", "2B", "2C",
+  "3A", "3B", "3C",
+  "4A", "4B", "4C",
 ];
 
+// Detailed configuration for each level
+const LEVEL_CONFIGS = {
+  // Level 1: Basic Logic (CODE type)
+  '1A': { questionCount: 2, durationMinutes: 45, problemType: 'CODE', testCaseCount: { sample: 2, hidden: 5, total: 7 } },
+  '1B': { questionCount: 2, durationMinutes: 45, problemType: 'CODE', testCaseCount: { sample: 2, hidden: 5, total: 7 } },
+  '1C': { questionCount: 2, durationMinutes: 45, problemType: 'CODE', testCaseCount: { sample: 2, hidden: 5, total: 7 } },
+
+  // Level 2: Intermediate Logic (CODE type)
+  '2A': { questionCount: 2, durationMinutes: 60, problemType: 'CODE', testCaseCount: { sample: 2, hidden: 5, total: 7 } },
+  '2B': { questionCount: 2, durationMinutes: 60, problemType: 'CODE', testCaseCount: { sample: 2, hidden: 5, total: 7 } },
+  '2C': { questionCount: 2, durationMinutes: 60, problemType: 'CODE', testCaseCount: { sample: 2, hidden: 5, total: 7 } },
+
+  // Level 3: React Native UI (UI type)
+  '3A': { questionCount: 1, durationMinutes: 90, problemType: 'UI', testCaseCount: { sample: 0, hidden: 0, total: 0 } },
+  '3B': { questionCount: 1, durationMinutes: 90, problemType: 'UI', testCaseCount: { sample: 0, hidden: 0, total: 0 } },
+  '3C': { questionCount: 1, durationMinutes: 90, problemType: 'UI', testCaseCount: { sample: 0, hidden: 0, total: 0 } },
+
+  // Level 4: Advanced React Native (UI type)
+  '4A': { questionCount: 1, durationMinutes: 90, problemType: 'UI', testCaseCount: { sample: 0, hidden: 0, total: 0 } },
+  '4B': { questionCount: 1, durationMinutes: 90, problemType: 'UI', testCaseCount: { sample: 0, hidden: 0, total: 0 } },
+  '4C': { questionCount: 1, durationMinutes: 90, problemType: 'UI', testCaseCount: { sample: 0, hidden: 0, total: 0 } },
+};
+
 export function getLevelConfig(level) {
-  const isLowerLevel = level.startsWith("1") || level.startsWith("2");
-  return {
-    questionCount: isLowerLevel ? 2 : 1,
-    durationMinutes: isLowerLevel ? 60 : 90,
+  return LEVEL_CONFIGS[level] || {
+    questionCount: 1,
+    durationMinutes: 90,
+    problemType: 'UI',
+    testCaseCount: { sample: 0, hidden: 0, total: 0 }
   };
 }
 
@@ -48,7 +61,7 @@ export async function getCurrentLevel(userId) {
   );
 
   if (sessions.length === 0) {
-    return "1A";
+    return "3A";
   }
 
   const lastLevel = sessions[0].level;

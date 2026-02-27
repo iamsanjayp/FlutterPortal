@@ -37,6 +37,7 @@ CREATE TABLE `users` (
   `is_active` tinyint(1) DEFAULT '1',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `active_session_id` varchar(100) DEFAULT NULL,
+  `current_level` varchar(10) DEFAULT '1A',
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`),
   UNIQUE KEY `enrollment_no` (`enrollment_no`),

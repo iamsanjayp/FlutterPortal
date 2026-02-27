@@ -1,0 +1,3 @@
+{
+    "code": "import React from 'react';\nimport { View, Text } from 'react-native';\n\nexport default function App() {\n  return (\n    <View>\n      <Text>Test</Text>\n    </View>\n  );\n}"
+}

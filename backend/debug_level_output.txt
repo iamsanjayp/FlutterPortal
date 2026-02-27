@@ -1,0 +1,13 @@
+{
+  "lastUser": {
+    "id": 1230,
+    "email": "debug_1771393682282@example.com",
+    "dbLevel": "1A"
+  },
+  "lastUserComputed": "1A",
+  "debugUser": {
+    "id": 1231,
+    "dbLevel": "1A"
+  },
+  "debugUserComputed": "1A"
+}

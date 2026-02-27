@@ -1,0 +1,19 @@
+Root / status: 200 {"status":"Backend running ≡ƒÜÇ"}
+Logging in as admin...
+Admin login success
+POST /api/admin/debug-test STATUS: 200
+GET /api/admin/students STATUS: 200
+Creating student: vm_1771405109837@example.com
+Logging in as new student...
+Testing execution...
+Execution Success: Simulation generated successfully
+Testing submission for problem 2003...
+Submission Response: {
+  submissionId: 93,
+  actualSubmissionId: 93,
+  status: 'PENDING',
+  message: 'UI problem submitted for manual review.',
+  problemId: '2003',
+  debugInfo: { userId: 1235, levelLookup: '3B', sessionsFound: [] }
+}
+Submission Success: Saved with ID 93

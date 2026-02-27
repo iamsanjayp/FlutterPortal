@@ -1,0 +1,20 @@
+Logging in as admin...
+Creating student: apime_1771395704194@example.com
+Logging in as new student...
+Calling /api/me...
+/api/me Response: {
+  "message": "Authenticated",
+  "user": {
+    "id": 1232,
+    "full_name": "API Me Test 1771395704194",
+    "email": "apime_1771395704194@example.com",
+    "enrollment_no": "EN1771395704194",
+    "roll_no": "R1771395704194",
+    "staff_id": null,
+    "role_id": 1
+  },
+  "level": "1A",
+  "durationMinutes": 45,
+  "questionCount": 2
+}
+SUCCESS: Level is 1A

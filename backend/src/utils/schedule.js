@@ -18,7 +18,7 @@ export async function getActiveSchedule() {
 export async function getLatestSchedules(limit = 10) {
   const [rows] = await pool.query(
     `
-    SELECT id, name, start_at, end_at, duration_minutes, is_active, created_at, updated_at
+    SELECT id, name, start_at, end_at, duration_minutes, is_active, created_at
     FROM test_schedules
     ORDER BY id DESC
     LIMIT ?

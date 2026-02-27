@@ -1,0 +1,8 @@
+{
+    "ignore": [
+        "runs/*",
+        "crash_log.txt",
+        "test-*.js"
+    ],
+    "ext": "js,json"
+}

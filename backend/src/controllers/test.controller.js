@@ -60,7 +60,6 @@ export async function startTest(req, res) {
   try {
     await conn.beginTransaction();
 
-    // 1. Create test session
     const [sessionResult] = await conn.query(
       `
       INSERT INTO test_sessions (user_id, level, status, started_at, level_cleared, duration_minutes)
@@ -71,7 +70,6 @@ export async function startTest(req, res) {
 
     const sessionId = sessionResult.insertId;
 
-    // 2. Pick random problems
     const [problems] = await conn.query(
       `
       SELECT id FROM problems
@@ -86,7 +84,6 @@ export async function startTest(req, res) {
       throw new Error("Not enough problems configured");
     }
 
-    // 3. Lock problems to session
     for (let i = 0; i < problems.length; i++) {
       await conn.query(
         `
@@ -127,9 +124,7 @@ export async function getTestData(req, res) {
     [sessionId]
   );
 
-  const schedule = session?.started_at
-    ? await getScheduleForTime(session.started_at)
-    : null;
+  const schedule = session?.started_at ? await getScheduleForTime(session.started_at) : null;
 
   const [questions] = await pool.query(
     `
@@ -190,9 +185,7 @@ export async function getTestMeta(req, res) {
       return res.status(404).json({ error: "Session not found" });
     }
 
-    const schedule = session?.started_at
-      ? await getScheduleForTime(session.started_at)
-      : null;
+    const schedule = session?.started_at ? await getScheduleForTime(session.started_at) : null;
 
     const now = new Date();
     const scheduleEnd = schedule?.end_at ? new Date(schedule.end_at) : null;

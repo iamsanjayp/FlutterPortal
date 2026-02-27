@@ -44,7 +44,7 @@ passport.use(
           // 4. Save OAuth account
           await pool.query(
             `INSERT INTO oauth_accounts 
-             (user_id, provider, provider_user_id)
+             (user_id, provider, provider_account_id)
              VALUES (?, 'GOOGLE', ?)`,
             [userId, googleId]
           );

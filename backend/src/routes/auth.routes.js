@@ -142,6 +142,69 @@ router.post("/login", async (req, res) => {
 });
 
 /**
+ * Development Bypass Login
+ * POST /auth/dev-login
+ * Body: { email: "..." }
+ */
+router.post("/dev-login", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "Not allowed in production" });
+  }
+
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: "Email required" });
+    }
+
+    const [users] = await pool.query(
+      "SELECT * FROM users WHERE email = ?",
+      [email]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = users[0];
+
+    // Generate JWT + session ID
+    const { token, sessionId } = signAccessToken(user);
+
+    // Store active session in DB
+    await pool.query(
+      "UPDATE users SET active_session_id = ? WHERE id = ?",
+      [sessionId, user.id]
+    );
+
+    // Set HTTP-only cookie
+    res.cookie("access_token", token, {
+      httpOnly: true,
+      secure: false, 
+      sameSite: "lax",
+      path: "/",
+      maxAge: 15 * 60 * 1000, 
+    });
+
+    res.json({
+      message: "Dev login successful",
+      user: {
+        id: user.id,
+        full_name: user.full_name,
+        email: user.email,
+        role_id: user.role_id,
+      },
+      warning: "Bypassed active schedule check for development"
+    });
+
+  } catch (err) {
+    console.error("Dev Login error:", err);
+    res.status(500).json({ error: "Dev login failed" });
+  }
+});
+
+/**
  * Login failure handler
  */
 router.get("/failed", (req, res) => {

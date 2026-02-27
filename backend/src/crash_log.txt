@@ -1,0 +1,70 @@
+[2026-02-13T04:37:01.101Z] Starting run 3f67cd8a-0f87-4d5f-9b20-ca652089a803
+[2026-02-13T04:37:02.033Z] Starting run a558cf36-073e-4c45-b416-53a6a8939534
+[2026-02-13T04:37:07.763Z] Starting run 4e964a4c-9cbe-4724-8631-f5961337dc89
+[2026-02-13T04:37:08.738Z] Starting run 618f3a4f-381d-41f4-86c1-9fc3e5b035cd
+[2026-02-13T05:13:55.715Z] Starting run bb71f424-a2e8-459a-b7c7-fd53970a9c21
+[2026-02-13T05:13:55.736Z] Files prepared bb71f424-a2e8-459a-b7c7-fd53970a9c21
+[2026-02-13T05:13:56.854Z] Starting run aca92c76-6f5b-4fc4-b590-264ed3d7d319
+[2026-02-13T05:13:56.859Z] Files prepared aca92c76-6f5b-4fc4-b590-264ed3d7d319
+[2026-02-13T05:14:20.166Z] Starting run b7f661d1-421f-4bec-812a-7137ab6c2982
+[2026-02-13T05:14:20.176Z] Files prepared b7f661d1-421f-4bec-812a-7137ab6c2982
+[2026-02-13T05:14:21.118Z] Starting run ef6bb8b1-52b0-43fb-a002-cbba322d886f
+[2026-02-13T05:14:21.122Z] Files prepared ef6bb8b1-52b0-43fb-a002-cbba322d886f
+[2026-02-13T06:27:03.674Z] Starting run 3a79f6f1-0d0c-4812-b0d4-981bde795e1e
+[2026-02-13T06:27:03.699Z] Files prepared 3a79f6f1-0d0c-4812-b0d4-981bde795e1e
+[2026-02-13T06:27:04.756Z] Starting run e5ace2d2-9031-4002-adea-716fac4dc809
+[2026-02-13T06:27:04.759Z] Files prepared e5ace2d2-9031-4002-adea-716fac4dc809
+[2026-02-13T06:44:11.256Z] Starting run 1990c926-498d-47d6-bc9b-367fb4ba8d50
+[2026-02-13T06:44:11.278Z] Files prepared 1990c926-498d-47d6-bc9b-367fb4ba8d50
+[2026-02-13T06:44:12.255Z] Starting run 7954661a-a063-4443-881b-6a824aa70e12
+[2026-02-13T06:44:12.258Z] Files prepared 7954661a-a063-4443-881b-6a824aa70e12
+[2026-02-13T06:50:33.417Z] Starting run 48556a45-26f8-4c9f-93cd-599578a6c717
+[2026-02-13T06:50:33.447Z] Files prepared 48556a45-26f8-4c9f-93cd-599578a6c717
+[2026-02-13T06:50:34.447Z] Starting run 9b0bf99f-b8d5-410f-8a19-b3b4f4c5aa2a
+[2026-02-13T06:50:34.450Z] Files prepared 9b0bf99f-b8d5-410f-8a19-b3b4f4c5aa2a
+[2026-02-13T08:01:29.797Z] Starting run bdb9eb9b-639d-4f97-8bd0-58c1c77d7bdd
+[2026-02-13T08:01:29.886Z] Files prepared bdb9eb9b-639d-4f97-8bd0-58c1c77d7bdd
+[2026-02-13T08:01:33.412Z] Starting run 7c6efe01-026d-4e1c-842a-bc5d905b78ee
+[2026-02-13T08:01:33.426Z] Files prepared 7c6efe01-026d-4e1c-842a-bc5d905b78ee
+[2026-02-13T08:06:51.126Z] Starting run e9e8d0f9-5b22-4e10-940a-20a9d4907db3
+[2026-02-13T08:06:51.131Z] Files prepared e9e8d0f9-5b22-4e10-940a-20a9d4907db3
+[2026-02-13T08:06:51.131Z] Files prepared e9e8d0f9-5b22-4e10-940a-20a9d4907db3
+[2026-02-13T08:08:00.621Z] Starting run 5dd7a685-ef2f-4025-975a-4dbcaff9894d
+[2026-02-13T08:08:00.627Z] Files prepared 5dd7a685-ef2f-4025-975a-4dbcaff9894d
+[2026-02-13T08:10:43.171Z] Starting run f49f610f-aadd-42d6-a467-dbbba8211c5f
+[2026-02-13T08:10:43.316Z] Files prepared f49f610f-aadd-42d6-a467-dbbba8211c5f
+[2026-02-13T08:11:40.973Z] Starting run 68c1b12f-5929-435f-b403-f3c582a5bb3c
+[2026-02-13T08:11:41.124Z] Files prepared 68c1b12f-5929-435f-b403-f3c582a5bb3c
+[2026-02-13T08:11:43.569Z] Container start failed 68c1b12f-5929-435f-b403-f3c582a5bb3c: Command failed: docker run -d --rm --name rn-runner-68c1b12f-5929-435f-b403-f3c582a5bb3c --memory=2g react-native-runner sleep infinity
+
+[2026-02-13T08:11:43.569Z] CRASH at 68c1b12f-5929-435f-b403-f3c582a5bb3c: Command failed: docker run -d --rm --name rn-runner-68c1b12f-5929-435f-b403-f3c582a5bb3c --memory=2g react-native-runner sleep infinity
+
+Stack: Error: Command failed: docker run -d --rm --name rn-runner-68c1b12f-5929-435f-b403-f3c582a5bb3c --memory=2g react-native-runner sleep infinity
+
+    at genericNodeError (node:internal/errors:985:15)
+    at wrappedFn (node:internal/errors:539:14)
+    at ChildProcess.exithandler (node:child_process:417:12)
+    at ChildProcess.emit (node:events:508:28)
+    at maybeClose (node:internal/child_process:1101:16)
+    at ChildProcess._handle.onexit (node:internal/child_process:305:5)
+[2026-02-13T08:11:45.637Z] Starting run 1b8a70f9-9e03-4680-923c-95f82c64cc14
+[2026-02-13T08:11:45.661Z] Files prepared 1b8a70f9-9e03-4680-923c-95f82c64cc14
+[2026-02-13T08:13:11.535Z] Starting run fab352bd-37e8-4d07-8be8-bc9fd7b2598c
+[2026-02-13T08:13:11.699Z] Files prepared fab352bd-37e8-4d07-8be8-bc9fd7b2598c
+[2026-02-13T08:13:15.057Z] Starting run 199ef8d3-15e1-420f-a5b5-1e3f7a77e1da
+[2026-02-13T08:13:15.072Z] Files prepared 199ef8d3-15e1-420f-a5b5-1e3f7a77e1da
+[2026-02-13T08:14:55.074Z] Starting run 5f250369-59c4-4622-9dd3-4388a16a1aef
+[2026-02-13T08:14:55.115Z] Files prepared 5f250369-59c4-4622-9dd3-4388a16a1aef
+[2026-02-13T08:14:58.213Z] Starting run 2ae7484f-40b9-4883-9f7b-198b41fa4c10
+[2026-02-13T08:14:58.222Z] Files prepared 2ae7484f-40b9-4883-9f7b-198b41fa4c10
+[2026-02-13T13:37:32.275Z] Starting run fae3a4d2-8ca1-48f2-9888-5fe664f5360a
+[2026-02-13T13:37:32.278Z] Files prepared fae3a4d2-8ca1-48f2-9888-5fe664f5360a
+[2026-02-13T13:37:32.650Z] CRASH at fae3a4d2-8ca1-48f2-9888-5fe664f5360a: Container start failed: Command failed: docker run -d --rm --name rn-runner-fae3a4d2-8ca1-48f2-9888-5fe664f5360a --memory=2g react-native-runner sleep infinity
+failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.
+
+[2026-02-13T13:39:26.760Z] Starting run e96ec567-4bab-469c-a4b2-393d9d881175
+[2026-02-13T13:39:26.794Z] Files prepared e96ec567-4bab-469c-a4b2-393d9d881175
+[2026-02-13T13:39:29.940Z] Starting run d8d851e4-49b6-47da-bf88-0f8845416fd9
+[2026-02-13T13:39:29.945Z] Files prepared d8d851e4-49b6-47da-bf88-0f8845416fd9
+[2026-02-13T13:39:31.383Z] CRASH at d8d851e4-49b6-47da-bf88-0f8845416fd9: Container start failed: Command failed: docker run -d --rm --name rn-runner-d8d851e4-49b6-47da-bf88-0f8845416fd9 --memory=2g react-native-runner sleep infinity
+
