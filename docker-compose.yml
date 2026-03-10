@@ -40,12 +40,12 @@ services:
       JWT_EXPIRY: 7d
       JWT_COOKIE_MAX_AGE_MS: 604800000
       NODE_ENV: production
-      FRONTEND_URL: http://pcdpflutter.duckdns.org
-      FRONTEND_URLS: http://pcdpflutter.duckdns.org
+      FRONTEND_URL: 10.40.11.151
+      FRONTEND_URLS: 10.40.11.151
       RESET_SESSION_SECRET: ADMIN_RESET_123
       GOOGLE_CLIENT_ID: change_me
       GOOGLE_CLIENT_SECRET: change_me
-      GOOGLE_CALLBACK_URL: http://pcdpflutter.duckdns.org/auth/google/callback
+      GOOGLE_CALLBACK_URL: 10.40.11.151/auth/google/callback
     ports:
       - "5000:5000"
     volumes:
