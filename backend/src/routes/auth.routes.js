@@ -1,12 +1,45 @@
 import express from "express";
 import passport from "passport";
+import rateLimit from "express-rate-limit";
 import { signAccessToken } from "../utils/jwt.js";
 import { getActiveSchedule } from "../utils/schedule.js";
 import pool from "../config/db.js";
 import bcrypt from "bcrypt";
 
 const router = express.Router();
-const cookieMaxAgeMs = Number(process.env.JWT_COOKIE_MAX_AGE_MS) || 7 * 24 * 60 * 60 * 1000;
+const cookieMaxAgeMs = Number(process.env.JWT_COOKIE_MAX_AGE_MS) || 1 * 60 * 60 * 1000; // default 1h
+
+// Only set secure cookies if the site is actually served over HTTPS
+const frontendUrl = process.env.FRONTEND_URL || "";
+const useSecureCookies = frontendUrl.startsWith("https://");
+
+// Cookie options — secure only when HTTPS is in use
+function getCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: useSecureCookies,
+    sameSite: "lax",
+    path: "/",
+    maxAge: cookieMaxAgeMs,
+  };
+}
+
+// Rate limiters for auth endpoints
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,                   // 10 login attempts per window
+  message: { error: "Too many login attempts, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: "Too many reset attempts, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 /**
  * STEP 1: Redirect user to Google login
@@ -35,7 +68,7 @@ router.get(
       );
 
       if (!dbUser || dbUser.is_active !== 1) {
-        return res.status(403).json({ message: "Account disabled" });
+        return res.status(403).json({ message: "Invalid credentials" });
       }
 
       if (dbUser.active_session_id) {
@@ -59,13 +92,7 @@ router.get(
       );
 
       // Set HTTP-only cookie
-      res.cookie("access_token", token, {
-        httpOnly: true,
-        secure: false,      // true in production (HTTPS)
-        sameSite: "lax",
-        path: "/",
-        maxAge: cookieMaxAgeMs,
-      });
+      res.cookie("access_token", token, getCookieOptions());
 
       const redirectUrl = process.env.FRONTEND_URL || "http://localhost:5173";
       res.redirect(`${redirectUrl}?login=success`);
@@ -79,7 +106,7 @@ router.get(
 /**
  * Username/password login (LOCAL users)
  */
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) {
@@ -91,12 +118,13 @@ router.post("/login", async (req, res) => {
       [email]
     );
 
+    // Generic error for all auth failures to prevent user enumeration
     if (!dbUser) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
     if (dbUser.is_active !== 1) {
-      return res.status(403).json({ error: "Account disabled" });
+      return res.status(401).json({ error: "Invalid credentials" });
     }
 
     if (dbUser.active_session_id) {
@@ -104,11 +132,11 @@ router.post("/login", async (req, res) => {
     }
 
     if (dbUser.auth_provider && dbUser.auth_provider !== "LOCAL") {
-      return res.status(403).json({ error: "Use Google login for this account" });
+      return res.status(401).json({ error: "Invalid credentials" });
     }
 
     if (!dbUser.password_hash) {
-      return res.status(403).json({ error: "Password login not configured" });
+      return res.status(401).json({ error: "Invalid credentials" });
     }
 
     const match = await bcrypt.compare(password, dbUser.password_hash);
@@ -130,13 +158,7 @@ router.post("/login", async (req, res) => {
       [sessionId, dbUser.id]
     );
 
-    res.cookie("access_token", token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      path: "/",
-      maxAge: cookieMaxAgeMs,
-    });
+    res.cookie("access_token", token, getCookieOptions());
 
     res.json({ message: "Login successful" });
   } catch (err) {
@@ -148,7 +170,7 @@ router.post("/login", async (req, res) => {
 /**
  * Reset active session by email (admin secret code)
  */
-router.post("/reset-session", async (req, res) => {
+router.post("/reset-session", resetLimiter, async (req, res) => {
   try {
     const { email, secret } = req.body || {};
     const expected = process.env.RESET_SESSION_SECRET;
@@ -171,7 +193,8 @@ router.post("/reset-session", async (req, res) => {
     );
 
     if (!dbUser) {
-      return res.status(404).json({ error: "User not found" });
+      // Don't reveal whether user exists — respond generically
+      return res.json({ message: "Session reset" });
     }
 
     await pool.query(

@@ -47,7 +47,24 @@ import {
 } from "../controllers/admin.controller.js";
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+
+// File upload config with type and size restrictions
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error("Only PNG, JPEG, and WebP images are allowed"));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+});
+
+const fileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+});
 
 router.use(authenticate);
 
@@ -73,21 +90,21 @@ router.delete("/submissions/:id", authorizeRoles(3), deleteSubmission);
 router.get("/students", authorizeRoles(3), getStudents);
 router.post("/users", authorizeRoles(3), createUser);
 router.patch("/users/:id", authorizeRoles(3), updateUser);
-router.post("/users/bulk", authorizeRoles(3), upload.single("file"), bulkCreateUsers);
+router.post("/users/bulk", authorizeRoles(3), fileUpload.single("file"), bulkCreateUsers);
 router.patch("/students/:id/status", authorizeRoles(3), updateStudentStatus);
 router.patch("/students/:id/level", authorizeRoles(3), updateStudentLevel);
 router.get("/students/:id/sessions", authorizeRoles(3), getStudentSessions);
 
 router.get("/problems", authorizeRoles(2, 3), getProblems);
 router.post("/problems", authorizeRoles(2, 3), createProblem);
-router.post("/problems/bulk", authorizeRoles(2, 3), upload.single("file"), bulkCreateProblems);
+router.post("/problems/bulk", authorizeRoles(2, 3), fileUpload.single("file"), bulkCreateProblems);
 router.patch("/problems/:id", authorizeRoles(2, 3), updateProblem);
 router.delete("/problems/:id", authorizeRoles(3), deleteProblem);
 router.get("/levels", authorizeRoles(2, 3), getLevels);
 router.post("/levels", authorizeRoles(3), createLevel);
 router.patch("/levels/:code", authorizeRoles(3), updateLevel);
-router.post("/problems/:id/reference-image", authorizeRoles(2, 3), upload.single("image"), uploadReferenceImage);
-router.post("/problems/:id/resources", authorizeRoles(2, 3), upload.array("files", 10), uploadResourceFiles);
+router.post("/problems/:id/reference-image", authorizeRoles(2, 3), imageUpload.single("image"), uploadReferenceImage);
+router.post("/problems/:id/resources", authorizeRoles(2, 3), imageUpload.array("files", 10), uploadResourceFiles);
 router.delete("/problems/:id/resources", authorizeRoles(2, 3), deleteResourceFile);
 router.get("/problems/:id/test-cases", authorizeRoles(3), getProblemTestCases);
 router.post("/problems/:id/test-cases", authorizeRoles(3), createTestCase);

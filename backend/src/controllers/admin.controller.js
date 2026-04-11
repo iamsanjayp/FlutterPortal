@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import { getLevelConfig, getNextLevel, setCurrentLevel } from "../utils/level.js";
 import { getLatestSchedules } from "../utils/schedule.js";
+import { validatePassword, isValidId } from "../utils/validation.js";
 import bcrypt from "bcrypt";
 import xlsx from "xlsx";
 
@@ -926,6 +927,10 @@ export async function createUser(req, res) {
       if (!password) {
         return res.status(400).json({ error: "Password required for local users" });
       }
+      const pwError = validatePassword(password);
+      if (pwError) {
+        return res.status(400).json({ error: pwError });
+      }
       passwordHash = await bcrypt.hash(password, 10);
     }
 
@@ -1006,6 +1011,10 @@ export async function updateUser(req, res) {
 
     let passwordHash = null;
     if (authProvider === "LOCAL" && password) {
+      const pwError = validatePassword(password);
+      if (pwError) {
+        return res.status(400).json({ error: pwError });
+      }
       passwordHash = await bcrypt.hash(password, 10);
     }
 

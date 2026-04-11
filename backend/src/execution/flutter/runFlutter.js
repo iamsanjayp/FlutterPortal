@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { exec, execFile } from "child_process";
 import fs from "fs";
 import path from "path";
 import https from "https";
@@ -13,6 +13,34 @@ const __dirname = path.dirname(__filename);
 const BASE_DIR = __dirname;
 const TEMPLATE_DIR = path.join(BASE_DIR, "template");
 const TEMPLATE_UI_DIR = path.join(BASE_DIR, "template_ui");
+const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
+
+// Validate a container name only has safe characters (alphanumeric, dashes)
+function validateContainerName(name) {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)) {
+    throw new Error("Invalid container name");
+  }
+  return name;
+}
+
+// Safe exec helper using execFile to avoid shell injection
+function execFileAsync(file, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, opts, (err, stdout, stderr) => {
+      if (err) {
+        err.stdout = stdout;
+        err.stderr = stderr;
+        return reject(err);
+      }
+      return resolve({ stdout, stderr });
+    });
+  });
+}
+
+// Docker helper — runs docker with array args (no shell)
+function dockerExec(args, opts = {}) {
+  return execFileAsync("docker", args, opts);
+}
 
 // Ensure student's UI code has the Flutter material import to avoid
 // compile errors when they forget to include it. Only skip adding
@@ -75,41 +103,28 @@ export async function runFlutterCode(code, { functionName, cases }) {
     );
 
     const useHostNetwork = process.env.FLUTTER_RUNNER_USE_HOST_NETWORK === "true";
-    const networkArg = useHostNetwork ? "--network host" : "";
-    const containerName = `code-test-${runId}`;
+    const containerName = validateContainerName(`code-test-${runId}`);
     const startTime = Date.now();
     let output = "";
 
-    const execAsync = (cmd, opts = {}) =>
-      new Promise((resolveCmd, rejectCmd) => {
-        exec(cmd, opts, (err, stdout, stderr) => {
-          if (err) {
-            err.stdout = stdout;
-            err.stderr = stderr;
-            return rejectCmd(err);
-          }
-          return resolveCmd({ stdout, stderr });
-        });
-      });
-
     try {
-      await execAsync(
-        `docker run --name ${containerName} -d ${networkArg} -v flutter_pub_cache:/root/.pub-cache --entrypoint /bin/bash flutter-runner -c "sleep 300"`,
+      const runArgs = ["run", "--name", containerName, "-d"];
+      if (useHostNetwork) runArgs.push("--network", "host");
+      runArgs.push("-v", "flutter_pub_cache:/root/.pub-cache", "--entrypoint", "/bin/bash", "flutter-runner", "-c", "sleep 300");
+      await dockerExec(runArgs, { timeout: 30000 });
+
+      await dockerExec(
+        ["exec", containerName, "/bin/bash", "-c", "mkdir -p /workspace"],
         { timeout: 30000 }
       );
 
-      await execAsync(
-        `docker exec ${containerName} /bin/bash -c "mkdir -p /workspace"`,
+      await dockerExec(
+        ["cp", workDir.replace(/\\/g, "/") + "/.", containerName + ":/workspace"],
         { timeout: 30000 }
       );
 
-      await execAsync(
-        `docker cp "${workDir.replace(/\\/g, "/")}/." ${containerName}:/workspace`,
-        { timeout: 30000 }
-      );
-
-      const runResult = await execAsync(
-        `docker exec ${containerName} /bin/bash -c "rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter pub get && flutter test --reporter json"`,
+      const runResult = await dockerExec(
+        ["exec", containerName, "/bin/bash", "-c", "rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter pub get && flutter test --reporter json"],
         { timeout: 300000 }
       );
       output = runResult.stdout.toString() + "\n" + runResult.stderr.toString();
@@ -140,7 +155,7 @@ export async function runFlutterCode(code, { functionName, cases }) {
       });
     } finally {
       try {
-        exec(`docker rm -f ${containerName}`);
+        execFile("docker", ["rm", "-f", containerName], () => {});
       } catch { }
       try {
         fs.rmSync(workDir, { recursive: true, force: true });
@@ -188,6 +203,12 @@ export async function runFlutterUI(code, resourceUrls = []) {
       for (const url of resourceUrls) {
         try {
           const srcPath = path.resolve(process.cwd(), url.replace(/^\//, ""));
+          // Path traversal protection: only allow files under uploads/
+          const normalizedSrc = path.normalize(srcPath);
+          if (!normalizedSrc.startsWith(UPLOADS_DIR)) {
+            console.error(`[UI TEST] Path traversal blocked: ${srcPath}`);
+            continue;
+          }
           console.log(`[UI TEST] Copying resource from ${srcPath}`);
           if (fs.existsSync(srcPath)) {
             const basename = path.basename(srcPath);
@@ -230,28 +251,15 @@ export async function runFlutterUI(code, resourceUrls = []) {
 
     // Allow optional host network mode via env vars
     const useHostNetworkUI = process.env.FLUTTER_RUNNER_USE_HOST_NETWORK === "true";
-    const networkArg = useHostNetworkUI ? "--network host" : "";
-    const containerName = `ui-test-${runId}`;
+    const containerName = validateContainerName(`ui-test-${runId}`);
     const startTime = Date.now();
     const previewPath = path.join(workDir, "test", "goldens", "preview.png");
     let output = "";
     let error = null;
 
-    const execAsync = (cmd, opts = {}) =>
-      new Promise((resolveCmd, rejectCmd) => {
-        exec(cmd, opts, (err, stdout, stderr) => {
-          if (err) {
-            err.stdout = stdout;
-            err.stderr = stderr;
-            return rejectCmd(err);
-          }
-          return resolveCmd({ stdout, stderr });
-        });
-      });
-
     const timeoutHandle = setTimeout(async () => {
       try {
-        await execAsync(`docker rm -f ${containerName}`, { timeout: 30000 });
+        await dockerExec(["rm", "-f", containerName], { timeout: 30000 });
       } catch { }
       resolve({
         status: "ERROR",
@@ -267,30 +275,30 @@ export async function runFlutterUI(code, resourceUrls = []) {
       console.log(`[UI TEST] Starting docker: ${containerName}`);
 
       // Start a long-lived container (no host mounts) to avoid Windows path contamination.
-      await execAsync(
-        `docker run --name ${containerName} -d ${networkArg} --memory=2g --memory-swap=2g --entrypoint /bin/bash flutter-runner -c "sleep 300"`,
-        { timeout: 30000 }
-      );
+      const uiRunArgs = ["run", "--name", containerName, "-d"];
+      if (useHostNetworkUI) uiRunArgs.push("--network", "host");
+      uiRunArgs.push("--memory=2g", "--memory-swap=2g", "--entrypoint", "/bin/bash", "flutter-runner", "-c", "sleep 300");
+      await dockerExec(uiRunArgs, { timeout: 30000 });
 
-      await execAsync(
-        `docker exec ${containerName} /bin/bash -c "mkdir -p /workspace"`,
+      await dockerExec(
+        ["exec", containerName, "/bin/bash", "-c", "mkdir -p /workspace"],
         { timeout: 30000 }
       );
 
       // Copy workspace into container (no bind mounts).
-      await execAsync(
-        `docker cp "${workDir.replace(/\\/g, "/")}/." ${containerName}:/workspace`,
+      await dockerExec(
+        ["cp", workDir.replace(/\\/g, "/") + "/.", containerName + ":/workspace"],
         { timeout: 30000 }
       );
 
       // Ensure Material Icons font is available in workspace/fonts for tests.
-      await execAsync(
-        `docker exec ${containerName} /bin/bash -c "mkdir -p /workspace/fonts && cp /sdks/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf /workspace/fonts/MaterialIcons-Regular.otf"`,
+      await dockerExec(
+        ["exec", containerName, "/bin/bash", "-c", "mkdir -p /workspace/fonts && cp /sdks/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf /workspace/fonts/MaterialIcons-Regular.otf"],
         { timeout: 30000 }
       );
 
-      const runResult = await execAsync(
-        `docker exec ${containerName} /bin/bash -c "rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter pub get && flutter test --reporter json -j1 --timeout=60s"`,
+      const runResult = await dockerExec(
+        ["exec", containerName, "/bin/bash", "-c", "rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter pub get && flutter test --reporter json -j1 --timeout=60s"],
         { timeout: uiTimeoutMs }
       );
       output = runResult.stdout.toString() + "\n" + runResult.stderr.toString();
@@ -315,8 +323,8 @@ export async function runFlutterUI(code, resourceUrls = []) {
     // Copy the file from the container to the host explicitly.
     console.log(`[UI TEST] Copying preview from container ${containerName}...`);
     try {
-      await execAsync(
-        `docker cp ${containerName}:/workspace/test/goldens/preview.png "${previewPath}"`,
+      await dockerExec(
+        ["cp", containerName + ":/workspace/test/goldens/preview.png", previewPath],
         { timeout: 30000 }
       );
     } catch (cpErr) {
@@ -324,7 +332,7 @@ export async function runFlutterUI(code, resourceUrls = []) {
     }
 
     // Clean up container after copy attempt
-    await execAsync(`docker rm -f ${containerName}`, { timeout: 30000 }).catch(() => { });
+    await dockerExec(["rm", "-f", containerName], { timeout: 30000 }).catch(() => { });
 
     console.log(`[UI TEST] Checking preview at: ${previewPath}`);
     const previewExists = fs.existsSync(previewPath);
@@ -384,41 +392,28 @@ export async function runFlutterCustom(code, { functionName, dartArgs }) {
     );
 
     const useHostNetworkCustom = process.env.FLUTTER_RUNNER_USE_HOST_NETWORK === "true";
-    const networkArgCustom = useHostNetworkCustom ? "--network host" : "";
-    const containerName = `custom-test-${runId}`;
+    const containerName = validateContainerName(`custom-test-${runId}`);
     const startTime = Date.now();
     let output = "";
 
-    const execAsync = (cmd, opts = {}) =>
-      new Promise((resolveCmd, rejectCmd) => {
-        exec(cmd, opts, (err, stdout, stderr) => {
-          if (err) {
-            err.stdout = stdout;
-            err.stderr = stderr;
-            return rejectCmd(err);
-          }
-          return resolveCmd({ stdout, stderr });
-        });
-      });
-
     try {
-      await execAsync(
-        `docker run --name ${containerName} -d ${networkArgCustom} -v flutter_pub_cache:/root/.pub-cache --entrypoint /bin/bash flutter-runner -c "sleep 300"`,
+      const customRunArgs = ["run", "--name", containerName, "-d"];
+      if (useHostNetworkCustom) customRunArgs.push("--network", "host");
+      customRunArgs.push("-v", "flutter_pub_cache:/root/.pub-cache", "--entrypoint", "/bin/bash", "flutter-runner", "-c", "sleep 300");
+      await dockerExec(customRunArgs, { timeout: 30000 });
+
+      await dockerExec(
+        ["exec", containerName, "/bin/bash", "-c", "mkdir -p /workspace"],
         { timeout: 30000 }
       );
 
-      await execAsync(
-        `docker exec ${containerName} /bin/bash -c "mkdir -p /workspace"`,
+      await dockerExec(
+        ["cp", workDir.replace(/\\/g, "/") + "/.", containerName + ":/workspace"],
         { timeout: 30000 }
       );
 
-      await execAsync(
-        `docker cp "${workDir.replace(/\\/g, "/")}/." ${containerName}:/workspace`,
-        { timeout: 30000 }
-      );
-
-      const runResult = await execAsync(
-        `docker exec ${containerName} /bin/bash -c "rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter pub get && flutter test"`,
+      const runResult = await dockerExec(
+        ["exec", containerName, "/bin/bash", "-c", "rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter pub get && flutter test"],
         { timeout: 300000 }
       );
       output = runResult.stdout.toString() + "\n" + runResult.stderr.toString();
@@ -449,7 +444,7 @@ export async function runFlutterCustom(code, { functionName, dartArgs }) {
       });
     } finally {
       try {
-        exec(`docker rm -f ${containerName}`);
+        execFile("docker", ["rm", "-f", containerName], () => {});
       } catch { }
       try {
         fs.rmSync(workDir, { recursive: true, force: true });
