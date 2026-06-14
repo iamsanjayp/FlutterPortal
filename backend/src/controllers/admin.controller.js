@@ -20,6 +20,51 @@ function toMysqlDateTime(value) {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
+function normalizeDashboardText(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizeLookupValue(value) {
+  return String(value || "").trim();
+}
+
+async function resolveStudentForRegistration(row) {
+  const lookupCandidates = [
+    { field: "user_id", value: row.user_id ?? row.userId ?? row.id ?? row.UserId, where: "id = ?", label: "user_id" },
+    { field: "email", value: row.email ?? row.Email ?? row.EMAIL, where: "email = ?", label: "email" },
+    { field: "enrollment_no", value: row.enrollment_no ?? row.enrollmentNo ?? row.Enrollment ?? row.enrollment, where: "enrollment_no = ?", label: "enrollment_no" },
+    { field: "roll_no", value: row.roll_no ?? row.rollNo ?? row.Roll ?? row.roll, where: "roll_no = ?", label: "roll_no" },
+    { field: "full_name", value: row.full_name ?? row.fullName ?? row.name ?? row.Name, where: "full_name = ?", label: "full_name" },
+  ];
+
+  for (const candidate of lookupCandidates) {
+    const rawValue = normalizeLookupValue(candidate.value);
+    if (!rawValue) {
+      continue;
+    }
+
+    const [matches] = await pool.query(
+      `
+      SELECT id, full_name, email, enrollment_no, roll_no
+      FROM users
+      WHERE role_id = 1 AND ${candidate.where}
+      LIMIT 2
+      `,
+      [rawValue]
+    );
+
+    if (matches.length === 1) {
+      return { user: matches[0], matchedBy: candidate.label };
+    }
+
+    if (matches.length > 1) {
+      return { error: `Multiple students matched ${candidate.label}` };
+    }
+  }
+
+  return { error: "No matching student found" };
+}
+
 export async function getMetrics(req, res) {
   try {
     const [[questionRow]] = await pool.query(
@@ -124,11 +169,17 @@ export async function getSchedules(req, res) {
       SELECT sch.*, 
              live.full_name AS live_teacher_name,
              code.full_name AS code_reviewer_name,
-             ui.full_name AS ui_reviewer_name
+              ui.full_name AS ui_reviewer_name,
+              COALESCE(reg.registration_count, 0) AS registration_count
       FROM test_schedules sch
       LEFT JOIN users live ON live.id = sch.live_teacher_id
       LEFT JOIN users code ON code.id = sch.code_reviewer_id
       LEFT JOIN users ui ON ui.id = sch.ui_reviewer_id
+            LEFT JOIN (
+         SELECT schedule_id, COUNT(*) AS registration_count
+         FROM test_schedule_registrations
+         GROUP BY schedule_id
+            ) reg ON reg.schedule_id = sch.id
       ${whereClause}
       ORDER BY sch.start_at DESC
       LIMIT 25
@@ -1149,6 +1200,158 @@ export async function bulkCreateUsers(req, res) {
   }
 }
 
+export async function getScheduleRegistrations(req, res) {
+  try {
+    const { id } = req.params;
+
+    const [[schedule]] = await pool.query(
+      "SELECT id, name FROM test_schedules WHERE id = ?",
+      [id]
+    );
+
+    if (!schedule) {
+      return res.status(404).json({ error: "Schedule not found" });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT reg.schedule_id, reg.user_id, reg.source, reg.created_at,
+             u.full_name, u.email, u.enrollment_no, u.roll_no
+      FROM test_schedule_registrations reg
+      JOIN users u ON u.id = reg.user_id
+      WHERE reg.schedule_id = ?
+      ORDER BY u.full_name, u.email
+      `,
+      [id]
+    );
+
+    res.json({ schedule, registrations: rows });
+  } catch (err) {
+    console.error("Schedule registrations error:", err);
+    res.status(500).json({ error: "Failed to load slot registrations" });
+  }
+}
+
+export async function addScheduleRegistration(req, res) {
+  try {
+    const { id } = req.params;
+    const { userId, source } = req.body || {};
+
+    if (!userId) {
+      return res.status(400).json({ error: "User is required" });
+    }
+
+    const [[schedule]] = await pool.query(
+      "SELECT id FROM test_schedules WHERE id = ?",
+      [id]
+    );
+    if (!schedule) {
+      return res.status(404).json({ error: "Schedule not found" });
+    }
+
+    const [[student]] = await pool.query(
+      "SELECT id FROM users WHERE id = ? AND role_id = 1",
+      [userId]
+    );
+    if (!student) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO test_schedule_registrations (schedule_id, user_id, source, created_by, created_at)
+      VALUES (?, ?, ?, ?, NOW())
+      ON DUPLICATE KEY UPDATE
+        source = VALUES(source),
+        created_by = VALUES(created_by)
+      `,
+      [id, userId, normalizeLookupValue(source) || "UI", req.user?.id || null]
+    );
+
+    res.json({ message: "Student added to slot" });
+  } catch (err) {
+    console.error("Add schedule registration error:", err);
+    res.status(500).json({ error: "Failed to add student to slot" });
+  }
+}
+
+export async function removeScheduleRegistration(req, res) {
+  try {
+    const { id, userId } = req.params;
+
+    const [result] = await pool.query(
+      "DELETE FROM test_schedule_registrations WHERE schedule_id = ? AND user_id = ?",
+      [id, userId]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: "Registration not found" });
+    }
+
+    res.json({ message: "Student removed from slot" });
+  } catch (err) {
+    console.error("Remove schedule registration error:", err);
+    res.status(500).json({ error: "Failed to remove student from slot" });
+  }
+}
+
+export async function bulkImportScheduleRegistrations(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (!req.file?.buffer) {
+      return res.status(400).json({ error: "File is required" });
+    }
+
+    const [[schedule]] = await pool.query(
+      "SELECT id, name FROM test_schedules WHERE id = ?",
+      [id]
+    );
+    if (!schedule) {
+      return res.status(404).json({ error: "Schedule not found" });
+    }
+
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      return res.status(400).json({ error: "No sheet found in file" });
+    }
+
+    const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+    if (!rows.length) {
+      return res.status(400).json({ error: "No rows found in file" });
+    }
+
+    const results = [];
+    for (const row of rows) {
+      const resolution = await resolveStudentForRegistration(row);
+
+      if (resolution.error) {
+        results.push({ status: "SKIPPED", reason: resolution.error });
+        continue;
+      }
+
+      await pool.query(
+        `
+        INSERT INTO test_schedule_registrations (schedule_id, user_id, source, created_by, created_at)
+        VALUES (?, ?, 'EXCEL', ?, NOW())
+        ON DUPLICATE KEY UPDATE
+          source = VALUES(source),
+          created_by = VALUES(created_by)
+        `,
+        [id, resolution.user.id, req.user?.id || null]
+      );
+
+      results.push({ status: "REGISTERED", user: resolution.user.full_name, matchedBy: resolution.matchedBy });
+    }
+
+    res.json({ message: "Bulk slot import complete", results });
+  } catch (err) {
+    console.error("Bulk schedule registration error:", err);
+    res.status(500).json({ error: "Failed to import slot registrations" });
+  }
+}
+
 export async function updateStudentLevel(req, res) {
   try {
     const { id } = req.params;
@@ -1499,7 +1702,8 @@ export async function getLevels(req, res) {
   try {
     const [rows] = await pool.query(
       `
-      SELECT level_code, assessment_type, question_count, duration_minutes, pass_threshold, is_active
+      SELECT level_code, assessment_type, question_count, duration_minutes, pass_threshold, is_active,
+             student_overview, portions_text, resource_links_text
       FROM levels
       ORDER BY level_code
       `
@@ -1513,15 +1717,16 @@ export async function getLevels(req, res) {
 
 export async function createLevel(req, res) {
   try {
-    const { levelCode, assessmentType, questionCount, durationMinutes, passThreshold, isActive } = req.body;
+    const { levelCode, assessmentType, questionCount, durationMinutes, passThreshold, isActive, studentOverview, portionsText, resourceLinksText } = req.body;
     if (!levelCode || !assessmentType) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
     await pool.query(
       `
-      INSERT INTO levels (level_code, assessment_type, question_count, duration_minutes, pass_threshold, is_active)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO levels (level_code, assessment_type, question_count, duration_minutes, pass_threshold, is_active,
+                         student_overview, portions_text, resource_links_text)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         levelCode,
@@ -1530,6 +1735,9 @@ export async function createLevel(req, res) {
         durationMinutes ?? 60,
         passThreshold ?? 85,
         typeof isActive === "boolean" ? (isActive ? 1 : 0) : 1,
+        normalizeDashboardText(studentOverview),
+        normalizeDashboardText(portionsText),
+        normalizeDashboardText(resourceLinksText),
       ]
     );
 
@@ -1543,7 +1751,7 @@ export async function createLevel(req, res) {
 export async function updateLevel(req, res) {
   try {
     const { code } = req.params;
-    const { assessmentType, questionCount, durationMinutes, passThreshold, isActive } = req.body;
+    const { assessmentType, questionCount, durationMinutes, passThreshold, isActive, studentOverview, portionsText, resourceLinksText } = req.body;
 
     const [result] = await pool.query(
       `
@@ -1553,7 +1761,10 @@ export async function updateLevel(req, res) {
         question_count = COALESCE(?, question_count),
         duration_minutes = COALESCE(?, duration_minutes),
         pass_threshold = COALESCE(?, pass_threshold),
-        is_active = COALESCE(?, is_active)
+        is_active = COALESCE(?, is_active),
+        student_overview = COALESCE(?, student_overview),
+        portions_text = COALESCE(?, portions_text),
+        resource_links_text = COALESCE(?, resource_links_text)
       WHERE level_code = ?
       `,
       [
@@ -1562,6 +1773,9 @@ export async function updateLevel(req, res) {
         durationMinutes ?? null,
         passThreshold ?? null,
         typeof isActive === "boolean" ? (isActive ? 1 : 0) : null,
+        studentOverview !== undefined ? normalizeDashboardText(studentOverview) : null,
+        portionsText !== undefined ? normalizeDashboardText(portionsText) : null,
+        resourceLinksText !== undefined ? normalizeDashboardText(resourceLinksText) : null,
         code,
       ]
     );

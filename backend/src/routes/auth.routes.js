@@ -2,7 +2,6 @@ import express from "express";
 import passport from "passport";
 import rateLimit from "express-rate-limit";
 import { signAccessToken } from "../utils/jwt.js";
-import { getActiveSchedule } from "../utils/schedule.js";
 import pool from "../config/db.js";
 import bcrypt from "bcrypt";
 
@@ -29,14 +28,6 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,                   // 10 login attempts per window
   message: { error: "Too many login attempts, please try again later" },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-const resetLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: { error: "Too many reset attempts, please try again later" },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -71,25 +62,20 @@ router.get(
         return res.status(403).json({ message: "Invalid credentials" });
       }
 
-      if (dbUser.active_session_id) {
+      if (dbUser.role_id === 1 && dbUser.active_session_id) {
         return res.status(409).json({ message: "Account already active on another device" });
-      }
-
-      if (dbUser.role_id === 1) {
-        const schedule = await getActiveSchedule();
-        if (!schedule) {
-          return res.status(403).json({ message: "Login allowed only during scheduled tests" });
-        }
       }
 
       // Generate JWT + session ID
       const { token, sessionId } = signAccessToken(req.user);
 
-      // Store active session in DB (single-device lock)
-      await pool.query(
-        "UPDATE users SET active_session_id = ? WHERE id = ?",
-        [sessionId, req.user.id]
-      );
+      // Store active session only for students (single-device lock)
+      if (dbUser.role_id === 1) {
+        await pool.query(
+          "UPDATE users SET active_session_id = ? WHERE id = ?",
+          [sessionId, req.user.id]
+        );
+      }
 
       // Set HTTP-only cookie
       res.cookie("access_token", token, getCookieOptions());
@@ -127,7 +113,7 @@ router.post("/login", loginLimiter, async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    if (dbUser.active_session_id) {
+    if (dbUser.role_id === 1 && dbUser.active_session_id) {
       return res.status(409).json({ error: "Account already active on another device" });
     }
 
@@ -144,19 +130,14 @@ router.post("/login", loginLimiter, async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    if (dbUser.role_id === 1) {
-      const schedule = await getActiveSchedule();
-      if (!schedule) {
-        return res.status(403).json({ error: "Login allowed only during scheduled tests" });
-      }
-    }
-
     const { token, sessionId } = signAccessToken(dbUser);
 
-    await pool.query(
-      "UPDATE users SET active_session_id = ? WHERE id = ?",
-      [sessionId, dbUser.id]
-    );
+    if (dbUser.role_id === 1) {
+      await pool.query(
+        "UPDATE users SET active_session_id = ? WHERE id = ?",
+        [sessionId, dbUser.id]
+      );
+    }
 
     res.cookie("access_token", token, getCookieOptions());
 
@@ -164,48 +145,6 @@ router.post("/login", loginLimiter, async (req, res) => {
   } catch (err) {
     console.error("Password login error:", err);
     res.status(500).json({ error: "Login failed" });
-  }
-});
-
-/**
- * Reset active session by email (admin secret code)
- */
-router.post("/reset-session", resetLimiter, async (req, res) => {
-  try {
-    const { email, secret } = req.body || {};
-    const expected = process.env.RESET_SESSION_SECRET;
-
-    if (!expected) {
-      return res.status(500).json({ error: "Reset disabled" });
-    }
-
-    if (!secret || secret !== expected) {
-      return res.status(403).json({ error: "Invalid reset code" });
-    }
-
-    if (!email) {
-      return res.status(400).json({ error: "Email required" });
-    }
-
-    const [[dbUser]] = await pool.query(
-      "SELECT id FROM users WHERE email = ?",
-      [email]
-    );
-
-    if (!dbUser) {
-      // Don't reveal whether user exists — respond generically
-      return res.json({ message: "Session reset" });
-    }
-
-    await pool.query(
-      "UPDATE users SET active_session_id = NULL WHERE id = ?",
-      [dbUser.id]
-    );
-
-    res.json({ message: "Session reset" });
-  } catch (err) {
-    console.error("Reset session error:", err);
-    res.status(500).json({ error: "Failed to reset session" });
   }
 });
 

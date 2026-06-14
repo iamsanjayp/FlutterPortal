@@ -15,6 +15,25 @@ export async function getActiveSchedule() {
   return schedule || null;
 }
 
+export async function getActiveScheduleForUser(userId) {
+  const [[schedule]] = await pool.query(
+    `
+    SELECT sch.id, sch.name, sch.start_at, sch.end_at, sch.duration_minutes, sch.is_active
+    FROM test_schedules sch
+    INNER JOIN test_schedule_registrations reg
+      ON reg.schedule_id = sch.id
+     AND reg.user_id = ?
+    WHERE sch.is_active = true
+      AND NOW() BETWEEN sch.start_at AND sch.end_at
+    ORDER BY sch.id DESC
+    LIMIT 1
+    `,
+    [userId]
+  );
+
+  return schedule || null;
+}
+
 export async function getLatestSchedules(limit = 10) {
   const [rows] = await pool.query(
     `

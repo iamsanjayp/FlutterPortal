@@ -41,9 +41,6 @@ export function loginWithPassword(payload) {
   });
 }
 
-export function resetActiveSession(payload) {
-  return request(`${API_BASE}/auth/reset-session`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+export function fetchStudentDashboard() {
+  return request(`${API_BASE}/api/me/dashboard`);
 }

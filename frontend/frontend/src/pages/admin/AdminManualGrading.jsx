@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Eye, CheckCircle, XCircle, Clock, User, Image as ImageIcon } from 'lucide-react';
 import { API_BASE_ROOT } from '../../api/apiBase.js';
+import { fetchSchedules } from '../../api/adminApi';
 
 const API_BASE = API_BASE_ROOT;
 
@@ -12,20 +13,38 @@ export default function AdminManualGrading() {
   const [feedback, setFeedback] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [filter, setFilter] = useState('pending'); // pending, graded, all
+  const [schedules, setSchedules] = useState([]);
+  const [selectedScheduleId, setSelectedScheduleId] = useState('');
+
+  useEffect(() => {
+    loadSchedules();
+    loadSubmissions();
+  }, []);
 
   useEffect(() => {
     loadSubmissions();
-  }, [filter]);
+  }, [filter, selectedScheduleId]);
+
+  async function loadSchedules() {
+    try {
+      const data = await fetchSchedules();
+      setSchedules(data.schedules || []);
+    } catch (err) {
+      console.error('Error loading schedules:', err);
+    }
+  }
 
   async function loadSubmissions() {
     setLoading(true);
     try {
-      const response = await fetch(
-        `${API_BASE}/api/admin/submissions/ui?filter=${filter}`,
-        {
-          credentials: 'include',
-        }
-      );
+      const params = new URLSearchParams({ filter });
+      if (selectedScheduleId) {
+        params.set('scheduleId', selectedScheduleId);
+      }
+
+      const response = await fetch(`${API_BASE}/api/admin/submissions/ui?${params.toString()}`, {
+        credentials: 'include',
+      });
       if (!response.ok) throw new Error('Failed to load submissions');
       const data = await response.json();
       setSubmissions(data.submissions || []);
@@ -94,7 +113,7 @@ export default function AdminManualGrading() {
 
       {/* Filters */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
           <span className="text-sm font-medium text-gray-700">Filter:</span>
           <div className="flex gap-2">
             <button
@@ -130,6 +149,18 @@ export default function AdminManualGrading() {
               All Submissions
             </button>
           </div>
+          <select
+            value={selectedScheduleId}
+            onChange={(e) => setSelectedScheduleId(e.target.value)}
+            className="lg:ml-auto px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="">All Slots</option>
+            {schedules.map((schedule) => (
+              <option key={schedule.id} value={schedule.id}>
+                {schedule.name} ({new Date(schedule.start_at).toLocaleDateString()})
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

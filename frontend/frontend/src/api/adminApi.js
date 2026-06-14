@@ -54,6 +54,47 @@ export function updateSchedule(id, payload) {
   });
 }
 
+export function fetchScheduleRegistrations(scheduleId) {
+  return request(`${API_BASE}/api/admin/schedules/${scheduleId}/registrations`);
+}
+
+export function addScheduleRegistration(scheduleId, payload) {
+  return request(`${API_BASE}/api/admin/schedules/${scheduleId}/registrations`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function removeScheduleRegistration(scheduleId, userId) {
+  return request(`${API_BASE}/api/admin/schedules/${scheduleId}/registrations/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function bulkImportScheduleRegistrations(scheduleId, file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${API_BASE}/api/admin/schedules/${scheduleId}/registrations/bulk`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `API error (${res.status})`);
+    }
+    throw new Error(payload.error || payload.message || `API error (${res.status})`);
+  }
+
+  return res.json();
+}
+
 export function resetQuestions(payload) {
   return request(`${API_BASE}/api/admin/sessions/reset-questions`, {
     method: "POST",

@@ -9,6 +9,73 @@ CREATE TABLE IF NOT EXISTS test_schedules (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+SET @student_overview_exists = (
+  SELECT COUNT(*)
+  FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'levels'
+    AND COLUMN_NAME = 'student_overview'
+);
+
+SET @student_overview_sql = IF(
+  @student_overview_exists = 0,
+  'ALTER TABLE levels ADD COLUMN student_overview TEXT NULL',
+  'SELECT 1'
+);
+
+PREPARE student_overview_stmt FROM @student_overview_sql;
+EXECUTE student_overview_stmt;
+DEALLOCATE PREPARE student_overview_stmt;
+
+SET @portions_text_exists = (
+  SELECT COUNT(*)
+  FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'levels'
+    AND COLUMN_NAME = 'portions_text'
+);
+
+SET @portions_text_sql = IF(
+  @portions_text_exists = 0,
+  'ALTER TABLE levels ADD COLUMN portions_text LONGTEXT NULL',
+  'SELECT 1'
+);
+
+PREPARE portions_text_stmt FROM @portions_text_sql;
+EXECUTE portions_text_stmt;
+DEALLOCATE PREPARE portions_text_stmt;
+
+SET @resource_links_text_exists = (
+  SELECT COUNT(*)
+  FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'levels'
+    AND COLUMN_NAME = 'resource_links_text'
+);
+
+SET @resource_links_text_sql = IF(
+  @resource_links_text_exists = 0,
+  'ALTER TABLE levels ADD COLUMN resource_links_text LONGTEXT NULL',
+  'SELECT 1'
+);
+
+PREPARE resource_links_text_stmt FROM @resource_links_text_sql;
+EXECUTE resource_links_text_stmt;
+DEALLOCATE PREPARE resource_links_text_stmt;
+
+CREATE TABLE IF NOT EXISTS test_schedule_registrations (
+  schedule_id INT NOT NULL,
+  user_id BIGINT NOT NULL,
+  source VARCHAR(32) NOT NULL DEFAULT 'UI',
+  created_by BIGINT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (schedule_id, user_id),
+  INDEX idx_schedule_registrations_user (user_id),
+  CONSTRAINT fk_schedule_registrations_schedule FOREIGN KEY (schedule_id) REFERENCES test_schedules(id) ON DELETE CASCADE,
+  CONSTRAINT fk_schedule_registrations_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_schedule_registrations_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
 SET @col_exists = (
   SELECT COUNT(*)
   FROM information_schema.COLUMNS

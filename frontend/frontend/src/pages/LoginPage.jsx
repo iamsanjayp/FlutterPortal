@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { startGoogleLogin, loginWithPassword, resetActiveSession } from "../api/authApi";
+import { startGoogleLogin, loginWithPassword } from "../api/authApi";
 import ErrorPage from "./ErrorPage";
 
 export default function LoginPage({ onLogin }) {
   const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const isScheduleError = error?.includes("Login allowed only during scheduled tests") || 
+                          error?.includes("Login allowed only for your registered slot") ||
                           error?.includes("Test portal is not scheduled") ||
                           error?.includes("No active test");
   const isInactiveError = error?.includes("Account disabled") || error?.includes("inactive");
@@ -26,34 +26,11 @@ export default function LoginPage({ onLogin }) {
     e.preventDefault();
     setSubmitting(true);
     setError("");
-    setInfo("");
     try {
       await loginWithPassword({ email, password });
       await onLogin();
     } catch (err) {
       setError(err?.message || "Login failed");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleResetSession() {
-    if (!email) {
-      setError("Enter the email first");
-      return;
-    }
-
-    const secret = window.prompt("Enter admin reset code");
-    if (!secret) return;
-
-    setSubmitting(true);
-    setError("");
-    setInfo("");
-    try {
-      await resetActiveSession({ email, secret });
-      setInfo("Session reset. You can log in now.");
-    } catch (err) {
-      setError(err?.message || "Reset failed");
     } finally {
       setSubmitting(false);
     }
@@ -107,20 +84,6 @@ export default function LoginPage({ onLogin }) {
           />
           Sign in with Google
         </button>
-
-        <button
-          type="button"
-          onClick={handleResetSession}
-          className="mt-3 w-full rounded-md border border-gray-200 bg-gray-50 py-2 text-sm text-gray-700 hover:border-gray-300"
-        >
-          Reset active session (admin code)
-        </button>
-
-        {info && (
-          <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            {info}
-          </div>
-        )}
 
         {error && !isScheduleError && !isInactiveError && (
           <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">

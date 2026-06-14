@@ -13,14 +13,119 @@ const pool = mysql.createPool({
   queueLimit: 100,
 });
 
-(async () => {
+const rootPool = process.env.MYSQL_ROOT_PASSWORD
+  ? mysql.createPool({
+      host: process.env.DB_HOST,
+      user: "root",
+      password: process.env.MYSQL_ROOT_PASSWORD,
+      waitForConnections: true,
+      connectionLimit: 1,
+      queueLimit: 10,
+    })
+  : null;
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function ensureSlotRegistrationTable() {
+  await pool.query(
+    `
+    CREATE TABLE IF NOT EXISTS test_schedule_registrations (
+      schedule_id INT NOT NULL,
+      user_id BIGINT NOT NULL,
+      source VARCHAR(32) NOT NULL DEFAULT 'UI',
+      created_by BIGINT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (schedule_id, user_id),
+      KEY idx_schedule_registrations_user (user_id),
+      CONSTRAINT fk_schedule_registrations_schedule FOREIGN KEY (schedule_id) REFERENCES test_schedules(id) ON DELETE CASCADE,
+      CONSTRAINT fk_schedule_registrations_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      CONSTRAINT fk_schedule_registrations_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+    `
+  );
+}
+
+async function ensureLevelDashboardColumns() {
+  const columns = [
+    ["student_overview", "TEXT NULL"],
+    ["portions_text", "LONGTEXT NULL"],
+    ["resource_links_text", "LONGTEXT NULL"],
+  ];
+
+  for (const [columnName, columnDefinition] of columns) {
+    const [[columnRow]] = await pool.query(
+      `
+      SELECT COUNT(*) AS total
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'levels'
+        AND COLUMN_NAME = ?
+      `,
+      [columnName]
+    );
+
+    if (!columnRow?.total) {
+      await pool.query(`ALTER TABLE levels ADD COLUMN ${columnName} ${columnDefinition}`);
+    }
+  }
+}
+
+async function repairPortalUserWithRoot() {
+  if (!rootPool) {
+    throw new Error("MYSQL_ROOT_PASSWORD is not configured");
+  }
+
+  const connection = await rootPool.getConnection();
   try {
-    const connection = await pool.getConnection();
-    console.log("✅ Database connected successfully");
+    const databaseName = connection.escapeId(process.env.DB_NAME);
+    const userName = connection.escape(process.env.DB_USER);
+    const userPassword = connection.escape(process.env.DB_PASSWORD);
+
+    await connection.query(`CREATE DATABASE IF NOT EXISTS ${databaseName}`);
+    await connection.query(
+      `CREATE USER IF NOT EXISTS ${userName}@'%' IDENTIFIED BY ${userPassword}`
+    );
+    await connection.query(
+      `ALTER USER ${userName}@'%' IDENTIFIED BY ${userPassword}`
+    );
+    await connection.query(
+      `GRANT ALL PRIVILEGES ON ${databaseName}.* TO ${userName}@'%'`
+    );
+    await connection.query("FLUSH PRIVILEGES");
+  } finally {
     connection.release();
-  } catch (err) {
-    console.error("❌ Database connection failed:", err.message);
-    process.exit(1);
+  }
+}
+
+let databaseReady = false;
+
+(async () => {
+  while (!databaseReady) {
+    try {
+      const connection = await pool.getConnection();
+      console.log("✅ Database connected successfully");
+      connection.release();
+      await ensureSlotRegistrationTable();
+      await ensureLevelDashboardColumns();
+      databaseReady = true;
+      return;
+    } catch (err) {
+      console.warn("⚠️ Primary database login failed, attempting repair:", err.message);
+
+      try {
+        await repairPortalUserWithRoot();
+        const connection = await pool.getConnection();
+        console.log("✅ Database connected successfully after repair");
+        connection.release();
+        await ensureSlotRegistrationTable();
+        await ensureLevelDashboardColumns();
+        databaseReady = true;
+        return;
+      } catch (repairErr) {
+        console.warn("⚠️ Database not ready yet, retrying:", repairErr.message);
+        await sleep(5000);
+      }
+    }
   }
 })();
 

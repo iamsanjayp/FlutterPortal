@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
-import { fetchAdminMetrics } from "../../api/adminApi";
+import { fetchAdminMetrics, fetchSchedules } from "../../api/adminApi";
 import { 
   Users, 
   BookOpen, 
   Activity, 
   CheckCircle,
   TrendingUp,
-  Clock
+  Calendar
 } from 'lucide-react';
 
 export default function AdminHome() {
   const [metrics, setMetrics] = useState(null);
+  const [schedules, setSchedules] = useState([]);
   const [error, setError] = useState("");
 
   const passCount = metrics?.passCount || 0;
@@ -21,6 +22,7 @@ export default function AdminHome() {
 
   useEffect(() => {
     loadMetrics();
+    loadSchedules();
   }, []);
 
   async function loadMetrics() {
@@ -29,6 +31,15 @@ export default function AdminHome() {
       setMetrics(res);
     } catch (err) {
       setError(err.message || "Failed to load metrics");
+    }
+  }
+
+  async function loadSchedules() {
+    try {
+      const res = await fetchSchedules();
+      setSchedules(res.schedules || []);
+    } catch (err) {
+      setError(err.message || "Failed to load schedules");
     }
   }
 
@@ -45,7 +56,7 @@ export default function AdminHome() {
       )}
 
       {/* KPI Cards */}
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6">
         <KPICard 
           title="Active Tests" 
           value={metrics?.activeSessions ?? 0}
@@ -66,9 +77,21 @@ export default function AdminHome() {
           color="red"
         />
         <KPICard 
+          title="Questions" 
+          value={metrics?.questionCount ?? 0}
+          icon={BookOpen}
+          color="green"
+        />
+        <KPICard 
+          title="Tests Today" 
+          value={metrics?.testsToday ?? 0}
+          icon={Calendar}
+          color="purple"
+        />
+        <KPICard 
           title="Submissions" 
           value={metrics?.submissionsCount ?? 0}
-          icon={BookOpen} 
+          icon={TrendingUp}
           color="green"
         />
       </section>
@@ -184,6 +207,60 @@ export default function AdminHome() {
           {!metrics?.levelCompletions?.length && (
             <div className="text-sm text-gray-500">No completions yet.</div>
           )}
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">Live / Upcoming Slots</h3>
+          </div>
+          <div className="space-y-3">
+            {schedules.slice(0, 5).map((schedule) => {
+              const startTime = new Date(schedule.start_at);
+              const endTime = new Date(schedule.end_at);
+              const now = new Date();
+              const isLive = schedule.is_active && now >= startTime && now <= endTime;
+              const isUpcoming = now < startTime;
+
+              return (
+                <div key={schedule.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">{schedule.name || `Slot ${schedule.id}`}</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {startTime.toLocaleString()} - {endTime.toLocaleString()}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      Teachers: {schedule.live_teacher_name || '-'} · {schedule.code_reviewer_name || '-'} · {schedule.ui_reviewer_name || '-'}
+                    </div>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${isLive ? 'bg-green-100 text-green-700' : isUpcoming ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>
+                    {isLive ? 'Live' : isUpcoming ? 'Upcoming' : 'Closed'}
+                  </span>
+                </div>
+              );
+            })}
+            {schedules.length === 0 && (
+              <div className="text-sm text-gray-500">No slots configured yet.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">Operational Notes</h3>
+          </div>
+          <div className="space-y-3 text-sm text-gray-600">
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+              Students log in any time, but the test portal opens only when their slot is active and registered.
+            </div>
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+              Level content, portions, and Flutter resources are managed from the Levels page and appear directly in the student dashboard.
+            </div>
+            <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+              Use the Students page for force logout, level changes, and account control.
+            </div>
+          </div>
         </div>
       </section>
     </div>

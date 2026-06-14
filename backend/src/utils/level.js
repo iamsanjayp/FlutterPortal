@@ -1,5 +1,29 @@
 import pool from "../config/db.js";
 
+function parseMultilineEntries(value) {
+  if (!value) return [];
+
+  const raw = String(value).trim();
+  if (!raw) return [];
+
+  return raw
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+}
+
+function parseResourceEntries(value) {
+  return parseMultilineEntries(value).map((line) => {
+    const [labelPart, urlPart] = line.split(/\s*[|,-]\s*/, 2);
+    const label = (labelPart || "").trim();
+    const url = (urlPart || labelPart || "").trim();
+    return {
+      label: label || url,
+      url,
+    };
+  });
+}
+
 const LEVELS = [
   "1A",
   "1B",
@@ -22,7 +46,8 @@ export async function getLevelConfig(level) {
   try {
     const [rows] = await pool.query(
       `
-      SELECT question_count, duration_minutes, assessment_type, pass_threshold, is_active
+            SELECT question_count, duration_minutes, assessment_type, pass_threshold, is_active,
+              student_overview, portions_text, resource_links_text
       FROM levels
       WHERE level_code = ?
       LIMIT 1
@@ -38,6 +63,11 @@ export async function getLevelConfig(level) {
         assessmentType: row.assessment_type || "TEST_CASE",
         passThreshold: row.pass_threshold ?? 85,
         isActive: row.is_active === 1,
+        studentOverview: row.student_overview || "",
+        portionsText: row.portions_text || "",
+        resourceLinksText: row.resource_links_text || "",
+        portions: parseMultilineEntries(row.portions_text),
+        resources: parseResourceEntries(row.resource_links_text),
       };
     }
   } catch {
@@ -51,6 +81,11 @@ export async function getLevelConfig(level) {
     assessmentType: level === "1A" ? "TEST_CASE" : "UI_COMPARE",
     passThreshold: 85,
     isActive: true,
+    studentOverview: "",
+    portionsText: "",
+    resourceLinksText: "",
+    portions: [],
+    resources: [],
   };
 }
 
@@ -113,3 +148,5 @@ export function getNextLevel(level) {
   }
   return LEVELS[currentIndex + 1];
 }
+
+export { parseMultilineEntries, parseResourceEntries };

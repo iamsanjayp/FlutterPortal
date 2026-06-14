@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Search, UserX, User, Mail, CheckCircle, XCircle, Plus } from 'lucide-react';
-import { fetchStudents, updateStudentStatus, updateStudentLevel, createUser, updateUser, bulkImportUsers } from '../../api/adminApi';
+import { Search, UserX, User, Mail, CheckCircle, XCircle, Plus, LogOut } from 'lucide-react';
+import { fetchStudents, updateStudentStatus, updateStudentLevel, createUser, updateUser, bulkImportUsers, forceLogoutUser } from '../../api/adminApi';
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
@@ -108,6 +108,23 @@ export default function AdminUsers() {
       await loadUsers(searchTerm);
     } catch (err) {
       alert('Failed to update user: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleForceLogout(user) {
+    if (!confirm(`Force logout ${user.full_name}?`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await forceLogoutUser(user.id);
+      await loadUsers(searchTerm);
+      alert('User logged out from all active sessions');
+    } catch (err) {
+      alert('Failed to force logout user: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -492,6 +509,13 @@ export default function AdminUsers() {
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-slate-50 text-slate-700 hover:bg-slate-100 transition-colors text-sm"
                     >
                       Edit
+                    </button>
+                    <button
+                      onClick={() => handleForceLogout(user)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors text-sm"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Force Logout
                     </button>
                     <button
                       onClick={() => handleToggleUser(user)}

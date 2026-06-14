@@ -7,6 +7,10 @@ import {
 	getSchedules,
 	createSchedule,
 	updateSchedule,
+	getScheduleRegistrations,
+	addScheduleRegistration,
+	removeScheduleRegistration,
+	bulkImportScheduleRegistrations,
 	resetQuestions,
 	getSessions,
 	resetSessionLogin,
@@ -70,8 +74,12 @@ router.use(authenticate);
 
 router.get("/metrics", authorizeRoles(2, 3), getMetrics);
 router.get("/schedules", authorizeRoles(2, 3), getSchedules);
+router.get("/schedules/:id/registrations", authorizeRoles(2, 3), getScheduleRegistrations);
 router.post("/schedules", authorizeRoles(3), createSchedule);
 router.patch("/schedules/:id", authorizeRoles(3), updateSchedule);
+router.post("/schedules/:id/registrations", authorizeRoles(2, 3), addScheduleRegistration);
+router.post("/schedules/:id/registrations/bulk", authorizeRoles(2, 3), fileUpload.single("file"), bulkImportScheduleRegistrations);
+router.delete("/schedules/:id/registrations/:userId", authorizeRoles(2, 3), removeScheduleRegistration);
 
 router.post("/sessions/reset-questions", authorizeRoles(3), resetQuestions);
 router.get("/sessions", authorizeRoles(2, 3), getSessions);

@@ -19,6 +19,9 @@ import { auditLog } from "./middleware/audit.middleware.js";
 
 const app = express();
 
+// The app runs behind nginx in compose, so trust the proxy headers it sets.
+app.set("trust proxy", 1);
+
 // Security headers
 app.use(helmet());
 

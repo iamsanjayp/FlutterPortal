@@ -1,6 +1,6 @@
 import pool from "../config/db.js";
 import { getCurrentLevel, getLevelConfig, getNextLevel, setCurrentLevel } from "../utils/level.js";
-import { getActiveSchedule, getScheduleForTime } from "../utils/schedule.js";
+import { getActiveSchedule, getActiveScheduleForUser, getScheduleForTime } from "../utils/schedule.js";
 
 export async function startTest(req, res) {
   const userId = req.user.id;
@@ -10,6 +10,11 @@ export async function startTest(req, res) {
 
   if (!schedule) {
     return res.status(403).json({ error: "Test portal is not scheduled" });
+  }
+
+  const userSchedule = await getActiveScheduleForUser(userId);
+  if (!userSchedule) {
+    return res.status(403).json({ error: "You are not registered for the active slot" });
   }
 
   const durationMinutes = schedule.duration_minutes || defaultDuration;

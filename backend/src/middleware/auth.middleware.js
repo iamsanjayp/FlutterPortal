@@ -22,8 +22,11 @@ export async function authenticate(req, res, next) {
       return res.status(401).json({ error: "Invalid user" });
     }
 
-    if (!users[0].active_session_id || users[0].active_session_id !== decoded.sessionId) {
-      return res.status(401).json({ error: "Session expired" });
+    const roleId = users[0].role_id;
+    if (roleId === 1) {
+      if (!users[0].active_session_id || users[0].active_session_id !== decoded.sessionId) {
+        return res.status(401).json({ error: "Session expired" });
+      }
     }
 
     req.user = {
