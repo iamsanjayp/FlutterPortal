@@ -1,0 +1,4 @@
+email,full_name,staff_id,role,auth_provider,password
+faculty1@bitsathy.ac.in,Dr. Karthik S.,BITFAC001,TEACHER,GOOGLE,
+faculty2@bitsathy.ac.in,Prof. Priya M.,BITFAC002,TEACHER,GOOGLE,
+admin2@bitsathy.ac.in,Suresh Kumar,BITADM002,ADMIN,LOCAL,AdminSecure@456

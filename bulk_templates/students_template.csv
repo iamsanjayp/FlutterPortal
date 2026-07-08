@@ -1,0 +1,4 @@
+email,full_name,enrollment_no,roll_no,role,auth_provider,password
+student1@bitsathy.ac.in,Aarav Sharma,737622CS101,22CS101,STUDENT,GOOGLE,
+student2@bitsathy.ac.in,Diya Patel,737622CS102,22CS102,STUDENT,GOOGLE,
+localstudent@bitsathy.ac.in,Rohan Kumar,737622CS103,22CS103,STUDENT,LOCAL,StudentPass@123
