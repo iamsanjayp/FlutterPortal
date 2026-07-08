@@ -1,3 +1,4 @@
+SET FOREIGN_KEY_CHECKS = 0;
 CREATE DATABASE  IF NOT EXISTS `mobiledev_portal` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
 USE `mobiledev_portal`;
 -- MySQL dump 10.13  Distrib 8.0.44, for Win64 (x86_64)
@@ -37,7 +38,7 @@ CREATE TABLE `test_schedules` (
   `code_reviewer_id` bigint DEFAULT NULL,
   `ui_reviewer_id` bigint DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=27 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -46,7 +47,6 @@ CREATE TABLE `test_schedules` (
 
 LOCK TABLES `test_schedules` WRITE;
 /*!40000 ALTER TABLE `test_schedules` DISABLE KEYS */;
-INSERT INTO `test_schedules` VALUES (25,'Level 2A - Asset upload feature test','2026-02-19 11:18:00','2026-02-19 12:18:00',90,1,'2026-02-19 11:18:33','2026-02-19 11:18:33',2,2,2),(26,'Level 2A - Test Slot 2','2026-02-19 14:10:00','2026-02-19 15:40:00',90,1,'2026-02-19 14:09:55','2026-02-19 14:09:55',2,2,2);
 /*!40000 ALTER TABLE `test_schedules` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -60,3 +60,5 @@ UNLOCK TABLES;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-02-24 13:46:09
+
+SET FOREIGN_KEY_CHECKS = 1;

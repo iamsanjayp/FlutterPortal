@@ -79,6 +79,9 @@ export async function getMetrics(req, res) {
     const [[activeSessionsRow]] = await pool.query(
       "SELECT COUNT(*) AS activeSessions FROM test_sessions WHERE status = 'IN_PROGRESS'"
     );
+    const [[activeRunsRow]] = await pool.query(
+      "SELECT COUNT(*) AS activeRuns FROM execution_runs WHERE status = 'RUNNING'"
+    );
     const [[submissionsRow]] = await pool.query(
       `
       SELECT COUNT(*) AS submissionsCount
@@ -142,6 +145,7 @@ export async function getMetrics(req, res) {
       userCount: userRow?.userCount || 0,
       blockedCount: blockedRow?.blockedCount || 0,
       activeSessions: activeSessionsRow?.activeSessions || 0,
+      activeRuns: activeRunsRow?.activeRuns || 0,
       submissionsCount: submissionsRow?.submissionsCount || 0,
       testsToday: testsRow?.testsToday || 0,
       passCount: statusMap.PASS || 0,
@@ -713,8 +717,12 @@ export async function getSubmissions(req, res) {
     }
 
     if (assessmentType) {
-      conditions.push("l.assessment_type = ?");
-      params.push(assessmentType);
+      if (assessmentType === "FLUTTER_UI" || assessmentType === "UI_COMPARE") {
+        conditions.push("l.assessment_type IN ('UI_COMPARE', 'FLUTTER_UI')");
+      } else {
+        conditions.push("l.assessment_type = ?");
+        params.push(assessmentType);
+      }
     }
 
     if (req.user?.roleId === 2) {
@@ -727,8 +735,13 @@ export async function getSubmissions(req, res) {
     const [rows] = await pool.query(
       `
       SELECT s.id, s.test_session_id, s.user_id, s.problem_id, s.status, s.created_at, s.code,
-             s.preview_image_url, s.score, s.match_percent,
-             p.title AS problem_title, p.reference_image_url,
+             s.preview_image_url, s.preview_image_url AS previewUrl, s.score, s.match_percent, s.match_percent AS widgetScore,
+             er.run_id AS execution_run_id,
+             er.status AS execution_run_status,
+             er.started_at AS execution_started_at,
+             er.finished_at AS execution_finished_at,
+             er.result_json AS execution_result_json,
+             p.title AS problem_title, p.reference_image_url, p.reference_image_url AS referenceMockupUrl,
              u.full_name AS student_name,
              sch.id AS schedule_id, sch.name AS schedule_name
       FROM (
@@ -741,6 +754,16 @@ export async function getSubmissions(req, res) {
       JOIN test_sessions ts ON ts.id = s.test_session_id
       JOIN test_schedules sch ON ts.started_at BETWEEN sch.start_at AND sch.end_at
       LEFT JOIN levels l ON l.level_code = ts.level
+      LEFT JOIN execution_runs er ON er.run_id = (
+        SELECT er2.run_id
+        FROM execution_runs er2
+        WHERE er2.session_id = s.test_session_id
+          AND er2.problem_id = s.problem_id
+          AND er2.user_id = s.user_id
+          AND er2.mode IN ('TEST_CASE', 'CUSTOM')
+        ORDER BY er2.updated_at DESC
+        LIMIT 1
+      )
       JOIN problems p ON p.id = s.problem_id
       JOIN users u ON u.id = s.user_id
       ${whereClause}
@@ -1511,7 +1534,7 @@ export async function getProblems(req, res) {
   try {
     const [rows] = await pool.query(
       `
-      SELECT id, level, title, description, starter_code, is_active, reference_image_url, ui_required_widgets, resource_urls
+      SELECT id, level, title, description, starter_code, is_active, reference_image_url, ui_required_widgets, resource_urls, project_files, required_packages, mock_api_route, mock_api_response, mock_db_seed, custom_test_code
       FROM problems
       ORDER BY level, id
       `
@@ -1525,7 +1548,7 @@ export async function getProblems(req, res) {
 
 export async function createProblem(req, res) {
   try {
-    const { level, title, description, starterCode, isActive, referenceImageUrl, uiRequiredWidgets } = req.body;
+    const { level, title, description, starterCode, isActive, referenceImageUrl, uiRequiredWidgets, projectFiles, requiredPackages, mockApiRoute, mockApiResponse, mockDbSeed, customTestCode } = req.body;
     if (!level || !title) {
       return res.status(400).json({ error: "Missing required fields" });
     }
@@ -1535,10 +1558,10 @@ export async function createProblem(req, res) {
 
     const [result] = await pool.query(
       `
-      INSERT INTO problems (level, title, description, starter_code, is_active, reference_image_url, ui_required_widgets)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO problems (level, title, description, starter_code, is_active, reference_image_url, ui_required_widgets, project_files, required_packages, mock_api_route, mock_api_response, mock_db_seed, custom_test_code)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [level, title, description || "", starterCode || "", resolvedActive, referenceImageUrl || null, uiWidgetsValue]
+      [level, title, description || "", starterCode || "", resolvedActive, referenceImageUrl || null, uiWidgetsValue, projectFiles || null, requiredPackages || null, mockApiRoute || null, mockApiResponse || null, mockDbSeed || null, customTestCode || null]
     );
 
     res.json({ id: result.insertId, message: "Problem created" });
@@ -1551,7 +1574,7 @@ export async function createProblem(req, res) {
 export async function updateProblem(req, res) {
   try {
     const { id } = req.params;
-    const { level, title, description, starterCode, isActive, referenceImageUrl, uiRequiredWidgets } = req.body;
+    const { level, title, description, starterCode, isActive, referenceImageUrl, uiRequiredWidgets, projectFiles, requiredPackages, mockApiRoute, mockApiResponse, mockDbSeed, customTestCode } = req.body;
 
     const uiWidgetsValue = normalizeUiWidgets(uiRequiredWidgets);
 
@@ -1565,7 +1588,13 @@ export async function updateProblem(req, res) {
         starter_code = COALESCE(?, starter_code),
         is_active = COALESCE(?, is_active),
         reference_image_url = COALESCE(?, reference_image_url),
-        ui_required_widgets = COALESCE(?, ui_required_widgets)
+        ui_required_widgets = COALESCE(?, ui_required_widgets),
+        project_files = COALESCE(?, project_files),
+        required_packages = COALESCE(?, required_packages),
+        mock_api_route = COALESCE(?, mock_api_route),
+        mock_api_response = COALESCE(?, mock_api_response),
+        mock_db_seed = COALESCE(?, mock_db_seed),
+        custom_test_code = COALESCE(?, custom_test_code)
       WHERE id = ?
       `,
       [
@@ -1576,6 +1605,12 @@ export async function updateProblem(req, res) {
         typeof isActive === "boolean" ? (isActive ? 1 : 0) : null,
         referenceImageUrl ?? null,
         uiWidgetsValue,
+        projectFiles ?? null,
+        requiredPackages ?? null,
+        mockApiRoute ?? null,
+        mockApiResponse ?? null,
+        mockDbSeed ?? null,
+        customTestCode ?? null,
         id,
       ]
     );
@@ -2016,9 +2051,14 @@ export async function getUISubmissions(req, res) {
       SELECT 
         s.id, s.test_session_id, s.user_id, s.problem_id, s.code, s.status,
         s.score, s.manual_score, s.manual_graded_by, s.manual_graded_at, s.manual_feedback,
-        s.final_score, s.preview_image_url, s.match_percent, s.created_at,
+        s.final_score, s.preview_image_url, s.preview_image_url AS previewUrl, s.match_percent, s.match_percent AS widgetScore, s.created_at,
+        er.run_id AS execution_run_id,
+        er.status AS execution_run_status,
+        er.started_at AS execution_started_at,
+        er.finished_at AS execution_finished_at,
+        er.result_json AS execution_result_json,
         u.full_name AS user_name, u.email AS user_email, u.roll_no,
-        p.title AS problem_title, p.reference_image_url
+        p.title AS problem_title, p.reference_image_url, p.reference_image_url AS referenceMockupUrl
       FROM (
         SELECT s.*, ROW_NUMBER() OVER (
           PARTITION BY s.test_session_id, s.problem_id, s.user_id
@@ -2030,9 +2070,19 @@ export async function getUISubmissions(req, res) {
       JOIN test_sessions ts ON ts.id = s.test_session_id
       JOIN test_schedules sch ON ts.started_at BETWEEN sch.start_at AND sch.end_at
       LEFT JOIN levels l ON l.level_code = ts.level
+      LEFT JOIN execution_runs er ON er.run_id = (
+        SELECT er2.run_id
+        FROM execution_runs er2
+        WHERE er2.session_id = s.test_session_id
+          AND er2.problem_id = s.problem_id
+          AND er2.user_id = s.user_id
+          AND er2.mode = 'UI_SUBMISSION'
+        ORDER BY er2.updated_at DESC
+        LIMIT 1
+      )
       JOIN users u ON u.id = s.user_id
       JOIN problems p ON p.id = s.problem_id
-      WHERE s.rn = 1 AND l.assessment_type = 'UI_COMPARE'
+      WHERE s.rn = 1 AND l.assessment_type IN ('UI_COMPARE', 'FLUTTER_UI')
     `;
 
     if (filter === 'pending') {

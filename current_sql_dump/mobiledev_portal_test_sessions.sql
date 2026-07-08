@@ -1,3 +1,4 @@
+SET FOREIGN_KEY_CHECKS = 0;
 CREATE DATABASE  IF NOT EXISTS `mobiledev_portal` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
 USE `mobiledev_portal`;
 -- MySQL dump 10.13  Distrib 8.0.44, for Win64 (x86_64)
@@ -38,7 +39,7 @@ CREATE TABLE `test_sessions` (
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `test_sessions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -47,7 +48,6 @@ CREATE TABLE `test_sessions` (
 
 LOCK TABLES `test_sessions` WRITE;
 /*!40000 ALTER TABLE `test_sessions` DISABLE KEYS */;
-INSERT INTO `test_sessions` VALUES (33,3,'2A','FAIL','2026-02-19 05:49:23','2026-02-19 08:41:34',NULL,0,95,1),(38,26,'2A','PASS','2026-02-19 08:43:25','2026-02-19 08:54:48','Nil',1,90,0);
 /*!40000 ALTER TABLE `test_sessions` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -61,3 +61,5 @@ UNLOCK TABLES;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-02-24 13:46:10
+
+SET FOREIGN_KEY_CHECKS = 1;

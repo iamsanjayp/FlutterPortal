@@ -64,7 +64,14 @@ export default function AdminHome() {
           icon={Activity} 
           color="purple"
         />
-        <KPICard 
+        <KPICard
+          title="Active Runs"
+          value={metrics?.activeRuns ?? 0}
+          badge={metrics?.activeRuns ? "RUNNING" : null}
+          icon={Activity}
+          color="blue"
+        />
+        <KPICard
           title="Students Logged" 
           value={metrics?.userCount ?? 0}
           icon={Users} 
@@ -362,10 +369,10 @@ function MetricCard({ title, value, tint }) {
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-sm p-5 flex items-center justify-between border-l-4 border-slate-700">
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 flex items-center justify-between border-l-4 border-indigo-500">
       <div>
-        <div className="text-xs uppercase text-slate-400">{title}</div>
-        <div className="text-2xl font-semibold text-slate-100 mt-2">{value}</div>
+        <div className="text-xs font-bold uppercase tracking-wider text-slate-500">{title}</div>
+        <div className="text-2xl font-bold text-slate-800 mt-2">{value}</div>
       </div>
       <div className={`h-10 w-10 rounded-full border flex items-center justify-center ${tints[tint] || tints.indigo}`}>
         <div className="h-3 w-3 rounded-full bg-current" />

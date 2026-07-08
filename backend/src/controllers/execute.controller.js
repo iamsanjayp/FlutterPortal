@@ -2,11 +2,15 @@ import pool from "../config/db.js";
 import path from "path";
 import fs from "fs";
 import {
-  runFlutterCode,
-  runFlutterCustom,
-  runFlutterUI,
-} from "../execution/flutter/runFlutter.js";
-import { getLevelConfig, getNextLevel, setCurrentLevel } from "../utils/level.js";
+  executeFlutterTestRun,
+  executeFlutterCustomRun,
+  executeFlutterUiPreview,
+  executeFlutterUiSubmission,
+  cancelExecutionRun,
+  getExecutionRun,
+  listExecutionRuns,
+} from "../services/execution/flutterExecutionService.js";
+import { getLevelConfig, getNextLevel, setCurrentLevel, isUiAssessment } from "../utils/level.js";
 
 /**
  * Execute Flutter code for a given problem in a test session
@@ -25,7 +29,7 @@ export async function executeTest(req, res) {
     );
     const level = sessionRow?.level || "1A";
     const { assessmentType } = await getLevelConfig(level);
-    if (assessmentType === "UI_COMPARE") {
+    if (isUiAssessment(assessmentType)) {
       return res.status(400).json({ error: "Test case execution is not enabled for UI levels" });
     }
 
@@ -46,7 +50,7 @@ export async function executeTest(req, res) {
 
     const [[problemRow]] = await pool.query(
       `
-      SELECT starter_code
+      SELECT starter_code, required_packages, custom_test_code, project_files
       FROM problems
       WHERE id = ?
       `,
@@ -75,9 +79,15 @@ export async function executeTest(req, res) {
     });
 
     // Execute Flutter code
-    const executionResult = await runFlutterCode(code, {
+    const executionResult = await executeFlutterTestRun(code, {
       functionName,
       cases: preparedCases,
+      sessionId,
+      problemId,
+      userId: req.user.id,
+      requiredPackages: problemRow?.required_packages,
+      customTestCode: problemRow?.custom_test_code,
+      projectFiles: problemRow?.project_files,
     });
     const rawTests = Array.isArray(executionResult.tests)
       ? executionResult.tests
@@ -142,19 +152,22 @@ export async function executeTest(req, res) {
         : "FAIL"
       : "FAIL";
 
+    const codeToStore = typeof code === "object" && code !== null ? JSON.stringify(code) : String(code || "");
+
     await pool.query(
       `
       INSERT INTO test_session_submissions
       (test_session_id, user_id, problem_id, code, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, NOW(), NOW())
       `,
-      [sessionId, req.user.id, problemId, code, overallStatus]
+      [sessionId, req.user.id, problemId, codeToStore, overallStatus]
     );
 
     res.json({
       status: overallStatus,
       tests: mappedTests,
       executionTimeMs: executionResult.executionTimeMs,
+      runId: executionResult.runId,
       sessionStatus,
       debugOutput: useFullFailFallback ? executionResult.rawOutput : undefined,
       debugTestFile: useFullFailFallback
@@ -184,15 +197,17 @@ export async function executeCustom(req, res) {
     const args = parseCustomInputWithTypes(customInput, paramTypes);
     const dartArgs = args.map(toDartLiteral);
 
-    const executionResult = await runFlutterCustom(code, {
+    const executionResult = await executeFlutterCustomRun(code, {
       functionName,
       dartArgs,
+      userId: req.user.id,
     });
 
     res.json({
       status: executionResult.status,
       executionTimeMs: executionResult.executionTimeMs,
       output: executionResult.customOutput ?? "",
+      runId: executionResult.runId,
     });
   } catch (err) {
     console.error("Custom execution error:", err);
@@ -214,19 +229,19 @@ export async function executeUiPreview(req, res) {
     );
     const level = sessionRow?.level || "1A";
     const { assessmentType } = await getLevelConfig(level);
-    if (assessmentType !== "UI_COMPARE") {
+    if (!isUiAssessment(assessmentType)) {
       return res.status(400).json({ error: "UI preview is only available for UI levels" });
     }
 
-    if (!/\bWidget\s+buildUI\s*\(/.test(code)) {
+    if (!/\bWidget\s+buildUI\s*\(/.test(extractMainCode(code))) {
       return res.status(400).json({
         error: "UI code must define Widget buildUI()",
       });
     }
 
-    // Fetch resource URLs for this problem
+    // Fetch resource URLs and advanced configuration for this problem
     const [[previewProblemRow]] = await pool.query(
-      "SELECT resource_urls FROM problems WHERE id = ?",
+      "SELECT resource_urls, required_packages, custom_test_code, project_files FROM problems WHERE id = ?",
       [problemId]
     );
     let previewResourceUrls = [];
@@ -234,8 +249,19 @@ export async function executeUiPreview(req, res) {
       try { previewResourceUrls = JSON.parse(previewProblemRow.resource_urls); } catch { }
     }
 
-    const runResult = await runFlutterUI(code, Array.isArray(previewResourceUrls) ? previewResourceUrls : []);
-    if (runResult.status !== "OK" || !runResult.previewBuffer) {
+    const runResult = await executeFlutterUiPreview(
+      code,
+      Array.isArray(previewResourceUrls) ? previewResourceUrls : [],
+      {
+        sessionId,
+        problemId,
+        userId: req.user.id,
+        requiredPackages: previewProblemRow?.required_packages,
+        customTestCode: previewProblemRow?.custom_test_code,
+        projectFiles: previewProblemRow?.project_files,
+      }
+    );
+    if (runResult.status !== "OK" || !runResult.previewUrl) {
       const detail = runResult?.rawOutput
         ? runResult.rawOutput.slice(-1200)
         : "";
@@ -246,14 +272,7 @@ export async function executeUiPreview(req, res) {
       });
     }
 
-    const previewsDir = path.resolve(process.cwd(), "uploads", "ui_previews");
-    fs.mkdirSync(previewsDir, { recursive: true });
-    const filename = `preview-${sessionId}-${problemId}-${Date.now()}.png`;
-    const destPath = path.join(previewsDir, filename);
-    fs.writeFileSync(destPath, runResult.previewBuffer);
-
-    const previewUrl = `/uploads/ui_previews/${filename}`;
-    res.json({ previewUrl, executionTimeMs: runResult.executionTimeMs });
+    res.json({ previewUrl: runResult.previewUrl, executionTimeMs: runResult.executionTimeMs, runId: runResult.runId });
   } catch (err) {
     console.error("UI preview error:", err);
     res.status(500).json({ error: "Failed to render UI preview" });
@@ -274,33 +293,44 @@ export async function executeUiSubmit(req, res) {
     );
     const level = sessionRow?.level || "1A";
     const { assessmentType, passThreshold } = await getLevelConfig(level);
-    if (assessmentType !== "UI_COMPARE") {
+    if (!isUiAssessment(assessmentType)) {
       return res.status(400).json({ error: "UI submit is only available for UI levels" });
     }
 
-    if (!/\bWidget\s+buildUI\s*\(/.test(code)) {
+    if (!/\b(Widget\s+buildUI\s*\(|void\s+main\s*\(|class\s+\w+\s+extends\s+(Stateless|Stateful)Widget)/.test(extractMainCode(code))) {
       return res.status(400).json({
-        error: "UI code must define Widget buildUI()",
+        error: "UI code must define Widget buildUI(), void main(), or a Flutter Widget class",
       });
     }
 
     const [[problemRow]] = await pool.query(
-      "SELECT ui_required_widgets, resource_urls FROM problems WHERE id = ?",
+      "SELECT ui_required_widgets, resource_urls, required_packages, custom_test_code, project_files FROM problems WHERE id = ?",
       [problemId]
     );
 
     const uiRequirements = parseUiRequirements(problemRow?.ui_required_widgets);
     const codeScore = uiRequirements
-      ? scoreUiCodeCombined(code, uiRequirements)
-      : scoreUiCode(code);
+      ? scoreUiCodeCombined(extractMainCode(code), uiRequirements)
+      : scoreUiCode(extractMainCode(code));
 
     let submitResourceUrls = [];
     if (problemRow?.resource_urls) {
       try { submitResourceUrls = JSON.parse(problemRow.resource_urls); } catch { }
     }
 
-    const runResult = await runFlutterUI(code, Array.isArray(submitResourceUrls) ? submitResourceUrls : []);
-    if (runResult.status !== "OK" || !runResult.previewBuffer) {
+    const runResult = await executeFlutterUiSubmission(
+      code,
+      Array.isArray(submitResourceUrls) ? submitResourceUrls : [],
+      {
+        sessionId,
+        problemId,
+        userId: req.user.id,
+        requiredPackages: problemRow?.required_packages,
+        customTestCode: problemRow?.custom_test_code,
+        projectFiles: problemRow?.project_files,
+      }
+    );
+    if (runResult.status !== "OK" || !runResult.previewUrl) {
       const detail = runResult?.rawOutput
         ? runResult.rawOutput.slice(-1200)
         : "";
@@ -311,15 +341,11 @@ export async function executeUiSubmit(req, res) {
       });
     }
 
-    const previewsDir = path.resolve(process.cwd(), "uploads", "ui_previews");
-    fs.mkdirSync(previewsDir, { recursive: true });
-    const filename = `submit-${sessionId}-${problemId}-${Date.now()}.png`;
-    const destPath = path.join(previewsDir, filename);
-    fs.writeFileSync(destPath, runResult.previewBuffer);
-    const previewUrl = `/uploads/ui_previews/${filename}`;
+    const previewUrl = runResult.previewUrl;
 
     const score = codeScore.score;
     const status = "AWAITING_MANUAL";
+    const codeToStore = typeof code === "object" && code !== null ? JSON.stringify(code) : String(code || "");
 
     await pool.query(
       `
@@ -327,18 +353,74 @@ export async function executeUiSubmit(req, res) {
       (test_session_id, user_id, problem_id, code, status, preview_image_url, score, match_percent, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
       `,
-      [sessionId, req.user.id, problemId, code, status, previewUrl, score, score]
+      [sessionId, req.user.id, problemId, codeToStore, status, previewUrl, score, score]
     );
     res.json({
       status,
       score,
+      widgetScore: score,
       matchPercent: score,
       scoreDetails: codeScore,
       previewUrl,
+      runId: runResult.runId,
     });
   } catch (err) {
     console.error("UI submit error:", err);
     res.status(500).json({ error: "Failed to submit UI" });
+  }
+}
+
+export async function getExecutionStatus(req, res) {
+  try {
+    const { runId } = req.params;
+    if (!runId) {
+      return res.status(400).json({ error: "Missing runId" });
+    }
+
+    const run = getExecutionRun(runId);
+    if (!run) {
+      return res.status(404).json({ error: "Execution run not found" });
+    }
+
+    res.json({ run });
+  } catch (err) {
+    console.error("Execution status error:", err);
+    res.status(500).json({ error: "Failed to load execution status" });
+  }
+}
+
+export async function listExecutionStatuses(req, res) {
+  try {
+    res.json({ runs: listExecutionRuns() });
+  } catch (err) {
+    console.error("Execution list error:", err);
+    res.status(500).json({ error: "Failed to load execution runs" });
+  }
+}
+
+export async function cancelExecutionStatus(req, res) {
+  try {
+    const { runId } = req.params;
+    const { reason } = req.body || {};
+
+    if (!runId) {
+      return res.status(400).json({ error: "Missing runId" });
+    }
+
+    const run = getExecutionRun(runId);
+    if (!run) {
+      return res.status(404).json({ error: "Execution run not found" });
+    }
+
+    const cancelled = cancelExecutionRun(runId, reason || "Cancelled by user");
+    if (!cancelled) {
+      return res.status(409).json({ error: "Execution run could not be cancelled" });
+    }
+
+    res.json({ run: cancelled });
+  } catch (err) {
+    console.error("Execution cancel error:", err);
+    res.status(500).json({ error: "Failed to cancel execution run" });
   }
 }
 
@@ -541,8 +623,25 @@ async function computeSessionStatus(sessionId) {
   return hasFail ? "FAIL" : "PASS";
 }
 
+function extractMainCode(code) {
+  if (!code) return "";
+  if (typeof code === "object" && code !== null) {
+    return code["lib/main.dart"] || code["main.dart"] || code["lib/solution.dart"] || code["solution.dart"] || Object.values(code).join("\n\n");
+  }
+  if (typeof code === "string" && code.trim().startsWith("{")) {
+    try {
+      const fileMap = JSON.parse(code);
+      if (typeof fileMap === "object" && fileMap !== null) {
+        return fileMap["lib/main.dart"] || fileMap["main.dart"] || fileMap["lib/solution.dart"] || fileMap["solution.dart"] || Object.values(fileMap).join("\n\n");
+      }
+    } catch { }
+  }
+  return typeof code === "string" ? code : String(code);
+}
+
 function extractFunctionName(code) {
-  const match = code.match(/\b[A-Za-z_][A-Za-z0-9_]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+  const mainCode = extractMainCode(code);
+  const match = mainCode.match(/\b[A-Za-z_][A-Za-z0-9_]*\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
   return match?.[1] || null;
 }
 

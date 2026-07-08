@@ -4,7 +4,8 @@ import { fetchLevels, createLevel, updateLevel } from "../../api/adminApi";
 
 const TYPE_OPTIONS = [
   { value: "TEST_CASE", label: "Test Case" },
-  { value: "UI_COMPARE", label: "UI Compare" },
+  { value: "FLUTTER_UI", label: "Interactive Flutter Web UI" },
+  { value: "UI_COMPARE", label: "UI Compare (Legacy)" },
 ];
 
 export default function AdminLevels() {

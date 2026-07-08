@@ -70,6 +70,70 @@ async function ensureLevelDashboardColumns() {
   }
 }
 
+async function ensureLevelAssessmentTypeColumn() {
+  try {
+    await pool.query("ALTER TABLE levels MODIFY COLUMN assessment_type VARCHAR(50) NOT NULL DEFAULT 'TEST_CASE'");
+    await pool.query("UPDATE levels SET assessment_type = 'FLUTTER_UI' WHERE assessment_type = 'UI_COMPARE'");
+  } catch (err) {
+    console.warn("Could not modify assessment_type column in levels table:", err.message);
+  }
+}
+
+async function ensureProblemAdvancedColumns() {
+  const columns = [
+    ["project_files", "LONGTEXT NULL"],
+    ["required_packages", "TEXT NULL"],
+    ["mock_api_route", "VARCHAR(255) NULL"],
+    ["mock_api_response", "LONGTEXT NULL"],
+    ["mock_db_seed", "LONGTEXT NULL"],
+    ["custom_test_code", "LONGTEXT NULL"],
+  ];
+
+  for (const [columnName, columnDefinition] of columns) {
+    const [[columnRow]] = await pool.query(
+      `
+      SELECT COUNT(*) AS total
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'problems'
+        AND COLUMN_NAME = ?
+      `,
+      [columnName]
+    );
+
+    if (!columnRow?.total) {
+      await pool.query(`ALTER TABLE problems ADD COLUMN ${columnName} ${columnDefinition}`);
+    }
+  }
+}
+
+async function ensureExecutionRunsTable() {
+  await pool.query(
+    `
+    CREATE TABLE IF NOT EXISTS execution_runs (
+      run_id VARCHAR(36) NOT NULL,
+      mode VARCHAR(32) NOT NULL,
+      session_id BIGINT NULL,
+      problem_id BIGINT NULL,
+      user_id BIGINT NULL,
+      status VARCHAR(32) NOT NULL,
+      metadata LONGTEXT NULL,
+      result_json LONGTEXT NULL,
+      error_json LONGTEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      finished_at DATETIME NULL,
+      PRIMARY KEY (run_id),
+      KEY idx_execution_runs_session (session_id),
+      KEY idx_execution_runs_problem (problem_id),
+      KEY idx_execution_runs_user (user_id),
+      KEY idx_execution_runs_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+    `
+  );
+}
+
 async function repairPortalUserWithRoot() {
   if (!rootPool) {
     throw new Error("MYSQL_ROOT_PASSWORD is not configured");
@@ -107,6 +171,9 @@ let databaseReady = false;
       connection.release();
       await ensureSlotRegistrationTable();
       await ensureLevelDashboardColumns();
+      await ensureLevelAssessmentTypeColumn();
+      await ensureProblemAdvancedColumns();
+      await ensureExecutionRunsTable();
       databaseReady = true;
       return;
     } catch (err) {
@@ -119,6 +186,9 @@ let databaseReady = false;
         connection.release();
         await ensureSlotRegistrationTable();
         await ensureLevelDashboardColumns();
+        await ensureLevelAssessmentTypeColumn();
+        await ensureProblemAdvancedColumns();
+        await ensureExecutionRunsTable();
         databaseReady = true;
         return;
       } catch (repairErr) {

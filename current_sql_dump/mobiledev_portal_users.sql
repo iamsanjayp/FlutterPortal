@@ -1,3 +1,4 @@
+SET FOREIGN_KEY_CHECKS = 0;
 CREATE DATABASE  IF NOT EXISTS `mobiledev_portal` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
 USE `mobiledev_portal`;
 -- MySQL dump 10.13  Distrib 8.0.44, for Win64 (x86_64)
@@ -48,7 +49,7 @@ CREATE TABLE `users` (
   KEY `idx_users_roll` (`roll_no`),
   KEY `idx_users_staff` (`staff_id`),
   CONSTRAINT `users_ibfk_1` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=27 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -57,7 +58,7 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (1,'Local Admin','admin@local.test',NULL,NULL,'ADMIN001','LOCAL','$2b$10$LffzEQIeiNLsLW0WsNlj4enYRWzB2PTsNL1icbS5ZFbAb4Ne8XRNe',3,1,'2026-02-05 17:42:58','d9c55791-c770-46b1-ba24-b66dc57355c1',NULL),(2,'Local Faculty','faculty@local.test',NULL,NULL,'FAC001','LOCAL','$2b$10$2DgdVK1GjDiiNyTVhihZGODtgsVyM4aRWAF3hY/mfctUfQeskFARy',2,1,'2026-02-05 17:42:58','98791708-b70e-48b4-80b3-430a1d94d785',NULL),(3,'Local Student','student@local.test','LOCALSTU001','ROLL001',NULL,'LOCAL','$2b$10$nxxAkGR3djo9AGqR/K90GuEXOXVLbAn9pe6I06fglYLzOhzlKhDhy',1,1,'2026-02-05 17:42:58',NULL,NULL),(26,'student2','stu2@local.test','234235','899358',NULL,'LOCAL','$2b$10$e4/8l.p6SWSxukSxtEL3L.DZHpSqF.WN1Pq.VP9G/wZJxCw.fAZY2',1,1,'2026-02-19 08:42:55',NULL,NULL);
+INSERT INTO `users` VALUES (1,'Local Admin','admin@local.test',NULL,NULL,'ADMIN001','LOCAL','$2b$10$LffzEQIeiNLsLW0WsNlj4enYRWzB2PTsNL1icbS5ZFbAb4Ne8XRNe',3,1,'2026-02-05 17:42:58','d9c55791-c770-46b1-ba24-b66dc57355c1',NULL);
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -71,3 +72,5 @@ UNLOCK TABLES;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-02-24 13:46:10
+
+SET FOREIGN_KEY_CHECKS = 1;

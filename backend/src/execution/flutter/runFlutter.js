@@ -50,6 +50,64 @@ function ensureUiImport(src) {
   return "import 'package:flutter/material.dart';\n" + src;
 }
 
+function writeWorkspaceFiles(workDir, code, isUi = false) {
+  let fileMap = null;
+  if (typeof code === "object" && code !== null) {
+    fileMap = code;
+  } else if (typeof code === "string" && code.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(code);
+      if (typeof parsed === "object" && parsed !== null) {
+        fileMap = parsed;
+      }
+    } catch (e) {
+      // Not JSON, treat as single file string
+    }
+  }
+
+  if (fileMap) {
+    for (const [filePath, fileContent] of Object.entries(fileMap)) {
+      let targetPath = filePath.replace(/\\/g, "/");
+      if (targetPath === "lib/main.dart" || targetPath === "main.dart" || targetPath === "lib/solution.dart" || targetPath === "solution.dart") {
+        targetPath = "lib/solution.dart";
+      } else if (!targetPath.startsWith("lib/") && targetPath !== "pubspec.yaml" && !targetPath.startsWith("test/")) {
+        targetPath = "lib/" + targetPath;
+      }
+      const fullPath = path.join(workDir, targetPath);
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      const contentToWrite = (targetPath === "lib/solution.dart" && isUi) ? ensureUiImport(String(fileContent || "")) : String(fileContent || "");
+      fs.writeFileSync(fullPath, contentToWrite);
+    }
+    return;
+  }
+
+  const targetFile = path.join(workDir, "lib", "solution.dart");
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  fs.writeFileSync(targetFile, isUi ? ensureUiImport(String(code || "")) : String(code || ""));
+}
+
+function injectRequiredPackages(workDir, requiredPackages) {
+  if (!requiredPackages) return;
+  let pkgList = [];
+  try {
+    pkgList = typeof requiredPackages === "string" ? JSON.parse(requiredPackages) : requiredPackages;
+  } catch {
+    pkgList = typeof requiredPackages === "string" ? requiredPackages.split(",").map(p => p.trim()) : [];
+  }
+  if (Array.isArray(pkgList) && pkgList.length > 0) {
+    const pubspecPath = path.join(workDir, "pubspec.yaml");
+    if (fs.existsSync(pubspecPath)) {
+      let pubspec = fs.readFileSync(pubspecPath, "utf-8");
+      for (const pkg of pkgList) {
+        if (pkg && !pubspec.includes(`  ${pkg}:`)) {
+          pubspec = pubspec.replace(/^(dependencies:\s*\n)/m, `$1  ${pkg}: any\n`);
+        }
+      }
+      fs.writeFileSync(pubspecPath, pubspec);
+    }
+  }
+}
+
 async function ensureTemplateFonts() {
   try {
     const fontsDir = path.join(TEMPLATE_UI_DIR, 'fonts');
@@ -83,7 +141,7 @@ async function ensureTemplateFonts() {
     console.error('Failed to ensure template fonts:', e && e.message ? e.message : e);
   }
 }
-export async function runFlutterCode(code, { functionName, cases }) {
+export async function runFlutterCode(code, { functionName, cases, requiredPackages, customTestCode, projectFiles } = {}) {
   return new Promise(async (resolve) => {
     const runId = uuidv4();
     const workDir = path.join(BASE_DIR, "runs", runId);
@@ -91,12 +149,10 @@ export async function runFlutterCode(code, { functionName, cases }) {
     fs.mkdirSync(workDir, { recursive: true });
     fs.cpSync(TEMPLATE_DIR, workDir, { recursive: true });
 
-    fs.writeFileSync(
-      path.join(workDir, "lib", "solution.dart"),
-      code
-    );
+    writeWorkspaceFiles(workDir, projectFiles || code, false);
+    injectRequiredPackages(workDir, requiredPackages);
 
-    const testFileContent = buildOfficialTestFile(functionName, cases);
+    const testFileContent = customTestCode || buildOfficialTestFile(functionName, cases);
     fs.writeFileSync(
       path.join(workDir, "test", "solution_test.dart"),
       testFileContent
@@ -172,11 +228,11 @@ export async function runFlutterCode(code, { functionName, cases }) {
   });
 }
 
-export async function runFlutterUI(code, resourceUrls = []) {
+export async function runFlutterUI(code, resourceUrls = [], options = {}) {
   return new Promise(async (resolve) => {
     const runId = uuidv4();
     const workDir = path.join(BASE_DIR, "runs", runId);
-    const uiTimeoutMs = Number(process.env.UI_TEST_TIMEOUT_MS || 120000);
+    const uiTimeoutMs = Number(process.env.UI_TEST_TIMEOUT_MS || 180000);
 
     fs.mkdirSync(workDir, { recursive: true });
     await ensureTemplateFonts();
@@ -189,10 +245,8 @@ export async function runFlutterUI(code, resourceUrls = []) {
     try { fs.rmSync(path.join(workDir, ".flutter-plugins"), { recursive: true, force: true }); } catch { }
     try { fs.rmSync(path.join(workDir, ".flutter-plugins-dependencies"), { recursive: true, force: true }); } catch { }
 
-    fs.writeFileSync(
-      path.join(workDir, "lib", "solution.dart"),
-      ensureUiImport(code)
-    );
+    writeWorkspaceFiles(workDir, options?.projectFiles || code, true);
+    injectRequiredPackages(workDir, options?.requiredPackages);
 
     // Copy question-level resource files into workspace assets
     const copiedAssetNames = [];
@@ -253,7 +307,8 @@ export async function runFlutterUI(code, resourceUrls = []) {
     const useHostNetworkUI = process.env.FLUTTER_RUNNER_USE_HOST_NETWORK === "true";
     const containerName = validateContainerName(`ui-test-${runId}`);
     const startTime = Date.now();
-    const previewPath = path.join(workDir, "test", "goldens", "preview.png");
+    const previewDir = path.join(UPLOADS_DIR, "ui_previews", runId);
+    const previewPath = path.join(previewDir, "index.html");
     let output = "";
     let error = null;
 
@@ -267,7 +322,7 @@ export async function runFlutterUI(code, resourceUrls = []) {
         rawOutput: output,
         executionTimeMs: Date.now() - startTime,
         previewPath: null,
-        previewBuffer: null,
+        previewUrl: null,
       });
     }, uiTimeoutMs);
 
@@ -297,11 +352,12 @@ export async function runFlutterUI(code, resourceUrls = []) {
         { timeout: 30000 }
       );
 
-      const runResult = await dockerExec(
-        ["exec", containerName, "/bin/bash", "-c", "rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter pub get && flutter test --reporter json -j1 --timeout=60s"],
+      const baseHref = `/uploads/ui_previews/${runId}/`;
+      const buildResult = await dockerExec(
+        ["exec", containerName, "/bin/bash", "-lc", `rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter create --platforms web --project-name ui_solution . && flutter pub get && flutter build web --release --base-href ${baseHref}`],
         { timeout: uiTimeoutMs }
       );
-      output = runResult.stdout.toString() + "\n" + runResult.stderr.toString();
+      output = buildResult.stdout.toString() + "\n" + buildResult.stderr.toString();
     } catch (err) {
       error = err;
       const stdout = err.stdout ? err.stdout.toString() : "";
@@ -320,13 +376,22 @@ export async function runFlutterUI(code, resourceUrls = []) {
     console.log(`[UI TEST] ===== FULL DOCKER OUTPUT END =====`);
     console.log(`[UI TEST] Docker error object:`, error);
 
-    // Copy the file from the container to the host explicitly.
-    console.log(`[UI TEST] Copying preview from container ${containerName}...`);
+    // Copy the built web app from the container to the host explicitly.
+    console.log(`[UI TEST] Copying web preview from container ${containerName}...`);
     try {
-      await dockerExec(
-        ["cp", containerName + ":/workspace/test/goldens/preview.png", previewPath],
-        { timeout: 30000 }
-      );
+      fs.mkdirSync(previewDir, { recursive: true });
+      try {
+        await dockerExec(
+          ["cp", containerName + ":/workspace/build/web/.", previewDir.replace(/\\/g, "/") + "/"],
+          { timeout: 30000 }
+        );
+      } catch (firstErr) {
+        console.log(`[UI TEST] First docker cp attempt failed (${firstErr.message}), trying native path...`);
+        await dockerExec(
+          ["cp", containerName + ":/workspace/build/web/.", previewDir],
+          { timeout: 30000 }
+        );
+      }
     } catch (cpErr) {
       console.log(`[UI TEST] Docker cp failed: ${cpErr.message}`);
     }
@@ -340,13 +405,12 @@ export async function runFlutterUI(code, resourceUrls = []) {
 
     if (previewExists) {
       console.log(`[UI TEST] ✓ Preview found! Returning success.`);
-      const previewBuffer = fs.readFileSync(previewPath);
       resolve({
         status: "OK",
         rawOutput: output,
         executionTimeMs: duration,
         previewPath,
-        previewBuffer,
+        previewUrl: `/uploads/ui_previews/${runId}/index.html`,
       });
       try {
         fs.rmSync(workDir, { recursive: true, force: true });
@@ -367,12 +431,12 @@ export async function runFlutterUI(code, resourceUrls = []) {
       rawOutput: output,
       executionTimeMs: duration,
       previewPath: null,
-      previewBuffer: null,
+      previewUrl: null,
     });
   });
 }
 
-export async function runFlutterCustom(code, { functionName, dartArgs }) {
+export async function runFlutterCustom(code, { functionName, dartArgs, requiredPackages, customTestCode, projectFiles } = {}) {
   return new Promise(async (resolve) => {
     const runId = uuidv4();
     const workDir = path.join(BASE_DIR, "runs", runId);
@@ -380,12 +444,10 @@ export async function runFlutterCustom(code, { functionName, dartArgs }) {
     fs.mkdirSync(workDir, { recursive: true });
     fs.cpSync(TEMPLATE_DIR, workDir, { recursive: true });
 
-    fs.writeFileSync(
-      path.join(workDir, "lib", "solution.dart"),
-      code
-    );
+    writeWorkspaceFiles(workDir, projectFiles || code, false);
+    injectRequiredPackages(workDir, requiredPackages);
 
-    const testFileContent = buildCustomTestFile(functionName, dartArgs);
+    const testFileContent = customTestCode || buildCustomTestFile(functionName, dartArgs);
     fs.writeFileSync(
       path.join(workDir, "test", "solution_test.dart"),
       testFileContent

@@ -7,21 +7,21 @@ export default function CodeEditor({ code, setCode }) {
       inherit: true,
       rules: [
         { token: "comment", foreground: "6B7280", fontStyle: "italic" },
-        { token: "keyword", foreground: "7C3AED", fontStyle: "bold" },
-        { token: "number", foreground: "F59E0B" },
-        { token: "string", foreground: "10B981" },
+        { token: "keyword", foreground: "A78BFA", fontStyle: "bold" },
+        { token: "number", foreground: "FBBF24" },
+        { token: "string", foreground: "34D399" },
         { token: "type.identifier", foreground: "38BDF8" },
-        { token: "identifier", foreground: "E2E8F0" },
+        { token: "identifier", foreground: "F1F5F9" },
         { token: "delimiter", foreground: "94A3B8" },
       ],
       colors: {
-        "editor.background": "#0B1220",
-        "editor.foreground": "#E2E8F0",
+        "editor.background": "#0F172A",
+        "editor.foreground": "#F1F5F9",
         "editorLineNumber.foreground": "#475569",
         "editorLineNumber.activeForeground": "#94A3B8",
-        "editorCursor.foreground": "#22D3EE",
-        "editor.selectionBackground": "#1F2A44",
-        "editor.lineHighlightBackground": "#0F172A",
+        "editorCursor.foreground": "#38BDF8",
+        "editor.selectionBackground": "#1E293B",
+        "editor.lineHighlightBackground": "#1E293B",
         "editorIndentGuide.background": "#1E293B",
         "editorIndentGuide.activeBackground": "#334155",
       },
@@ -29,7 +29,7 @@ export default function CodeEditor({ code, setCode }) {
   }
 
   return (
-    <div className="h-full bg-slate-950 rounded-lg shadow-sm border border-slate-800 overflow-hidden">
+    <div className="h-full bg-slate-900 rounded-xl shadow-sm border border-slate-800 overflow-hidden">
       <Editor
         height="100%"
         language="dart"
@@ -50,3 +50,4 @@ export default function CodeEditor({ code, setCode }) {
     </div>
   );
 }
+

@@ -1,3 +1,4 @@
+SET FOREIGN_KEY_CHECKS = 0;
 CREATE TABLE IF NOT EXISTS `test_schedule_registrations` (
   `schedule_id` int NOT NULL,
   `user_id` bigint NOT NULL,
@@ -10,3 +11,4 @@ CREATE TABLE IF NOT EXISTS `test_schedule_registrations` (
   CONSTRAINT `fk_schedule_registrations_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_schedule_registrations_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+SET FOREIGN_KEY_CHECKS = 1;

@@ -20,6 +20,7 @@ import AdminUsers from "./AdminUsers";
 import AdminStaff from "./AdminStaff";
 import AdminSubmissions from "./AdminSubmissions";
 import AdminManualGrading from "./AdminManualGrading";
+import AdminExecutionRuns from "./AdminExecutionRuns";
 
 const PAGES = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -31,6 +32,7 @@ const PAGES = [
   { key: "staff", label: "Staff", icon: Users },
   { key: "submissions", label: "Code Review - Coding Test", icon: FileText },
   { key: "manual-grading", label: "Code Review - UI Test", icon: ClipboardCheck },
+  { key: "executions", label: "Execution Runs", icon: Activity },
 ];
 
 export default function AdminLayout({ user, onLogout }) {
@@ -121,6 +123,7 @@ export default function AdminLayout({ user, onLogout }) {
         {activePage === "staff" && <AdminStaff />}
         {activePage === "submissions" && <AdminSubmissions />}
         {activePage === "manual-grading" && <AdminManualGrading />}
+        {activePage === "executions" && <AdminExecutionRuns />}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import executeRoutes from "./routes/execute.routes.js";
 import protectedRoutes from "./routes/protected.routes.js";
 import testRoutes from "./routes/test.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
+import mockRoutes from "./routes/mock.routes.js";
 import { auditLog } from "./middleware/audit.middleware.js";
 
 
@@ -22,8 +23,14 @@ const app = express();
 // The app runs behind nginx in compose, so trust the proxy headers it sets.
 app.set("trust proxy", 1);
 
-// Security headers
-app.use(helmet());
+// Security headers - configured to allow iframe embedding and scripts for interactive Flutter Web previews
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false,
+  crossOriginOpenerPolicy: false,
+  frameguard: false,
+}));
 
 // CORS — normalize origins (add http:// if no protocol) and validate
 const rawOrigins = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || "http://localhost:5173")
@@ -56,7 +63,14 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+app.use("/uploads", (req, res, next) => {
+  res.removeHeader("X-Frame-Options");
+  res.removeHeader("Content-Security-Policy");
+  res.removeHeader("Cross-Origin-Resource-Policy");
+  res.removeHeader("Cross-Origin-Embedder-Policy");
+  res.removeHeader("Cross-Origin-Opener-Policy");
+  next();
+}, express.static(path.resolve(process.cwd(), "uploads")));
 
 // Routes
 app.use("/auth", authRoutes);
@@ -65,6 +79,7 @@ app.use("/api/problems", problemRoutes);
 app.use("/api/execute", executeRoutes);
 app.use("/api", protectedRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/mock", mockRoutes);
 
 app.get("/", (req, res) => {
   res.json({ status: "Backend running 🚀" });

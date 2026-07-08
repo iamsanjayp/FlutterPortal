@@ -217,6 +217,18 @@ function QuestionsTable({ questions, onEdit, onDelete, loading }) {
   );
 }
 
+const AVAILABLE_PACKAGES = [
+  { id: 'provider', label: 'Provider (^6.1.1)' },
+  { id: 'flutter_riverpod', label: 'Riverpod (^2.5.1)' },
+  { id: 'flutter_bloc', label: 'BLoC (^8.1.3)' },
+  { id: 'dio', label: 'Dio (^5.4.0)' },
+  { id: 'http', label: 'HTTP (^1.1.0)' },
+  { id: 'sqflite_common_ffi_web', label: 'SQLite Web (^0.4.3)' },
+  { id: 'shared_preferences', label: 'Shared Preferences (^2.2.2)' },
+  { id: 'get_it', label: 'GetIt (^7.6.0)' },
+  { id: 'equatable', label: 'Equatable (^2.0.5)' }
+];
+
 function QuestionEditor({ question, levels, onSave, onCancel }) {
   const initialUiRequiredWidgets = (() => {
     const raw = question?.ui_required_widgets;
@@ -227,7 +239,6 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
     } catch { }
     return raw;
   })();
-
 
   const [formData, setFormData] = useState({
     title: question?.title || '',
@@ -243,7 +254,48 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
         return Array.isArray(parsed) ? parsed : [];
       } catch { return []; }
     })(),
+    requiredPackages: (() => {
+      try {
+        const parsed = JSON.parse(question?.required_packages || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return typeof question?.required_packages === 'string' ? question.required_packages.split(',').map(s=>s.trim()).filter(Boolean) : [];
+      }
+    })(),
+    mockApiRoute: question?.mock_api_route || '',
+    mockApiResponse: question?.mock_api_response || '',
+    mockDbSeed: question?.mock_db_seed || '',
+    customTestCode: question?.custom_test_code || '',
   });
+
+  // Multi-file workspace state
+  const [isMultiFile, setIsMultiFile] = useState(() => {
+    if (question?.project_files) {
+      try {
+        const parsed = JSON.parse(question.project_files);
+        return typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length > 0;
+      } catch { }
+    }
+    return false;
+  });
+
+  const [projectFilesMap, setProjectFilesMap] = useState(() => {
+    if (question?.project_files) {
+      try {
+        const parsed = JSON.parse(question.project_files);
+        if (typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length > 0) return parsed;
+      } catch { }
+    }
+    return { "lib/main.dart": question?.starter_code || "// Write your Flutter code here\n" };
+  });
+
+  const [activeFilePath, setActiveFilePath] = useState("lib/main.dart");
+  const [newFileName, setNewFileName] = useState("");
+  const [showAddFileModal, setShowAddFileModal] = useState(false);
+
+  // Tab states for LeetCode style dynamic layout
+  const [leftTab, setLeftTab] = useState('details'); // 'details' | 'packages_mock' | 'grading'
+  const [rightTab, setRightTab] = useState('code'); // 'code' | 'testcases' | 'resources'
 
   const [testCases, setTestCases] = useState([]);
   const [testCaseForm, setTestCaseForm] = useState({ input: '', expectedOutput: '', isHidden: false, orderNo: 1 });
@@ -254,7 +306,7 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
   useEffect(() => {
     if (question?.id) {
       const levelMeta = levels?.find(lvl => lvl.level_code === (question?.level || ''));
-      if (levelMeta?.assessment_type !== 'UI_COMPARE') {
+      if (levelMeta?.assessment_type !== 'UI_COMPARE' && levelMeta?.assessment_type !== 'FLUTTER_UI') {
         loadTestCases();
       }
     }
@@ -272,10 +324,16 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
   async function handleSave() {
     try {
       setLoading(true);
+      const payload = {
+        ...formData,
+        projectFiles: isMultiFile ? JSON.stringify(projectFilesMap) : null,
+        starterCode: isMultiFile ? (projectFilesMap["lib/main.dart"] || Object.values(projectFilesMap)[0] || "") : formData.starterCode,
+        requiredPackages: JSON.stringify(formData.requiredPackages),
+      };
       if (question?.id) {
-        await updateProblem(question.id, formData);
+        await updateProblem(question.id, payload);
       } else {
-        await createProblem(formData);
+        await createProblem(payload);
       }
       onSave();
     } catch (err) {
@@ -303,7 +361,7 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
   const sampleTestCases = testCases.filter(tc => !tc.is_hidden);
   const hiddenTestCases = testCases.filter(tc => tc.is_hidden);
   const selectedLevelMeta = levels?.find(lvl => lvl.level_code === formData.level);
-  const isUiCompare = selectedLevelMeta?.assessment_type === 'UI_COMPARE';
+  const isUiCompare = selectedLevelMeta?.assessment_type === 'UI_COMPARE' || selectedLevelMeta?.assessment_type === 'FLUTTER_UI';
 
   async function handleUploadReference() {
     if (!question?.id) {
@@ -341,7 +399,7 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
       setUploading(true);
       const res = await uploadProblemResources(question.id, files);
       setFormData(prev => ({ ...prev, resourceUrls: res.resourceUrls }));
-      e.target.value = ''; // Reset input
+      e.target.value = '';
     } catch (err) {
       alert('Failed to upload resources: ' + err.message);
     } finally {
@@ -359,296 +417,592 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
     }
   }
 
+  function handleAddFile() {
+    if (!newFileName.trim()) return;
+    let name = newFileName.trim().replace(/\\/g, '/');
+    if (!name.startsWith('lib/') && !name.startsWith('test/') && name !== 'pubspec.yaml') {
+      name = 'lib/' + name;
+    }
+    if (projectFilesMap[name] !== undefined) {
+      alert('File already exists');
+      return;
+    }
+    setProjectFilesMap(prev => ({ ...prev, [name]: '// New file: ' + name + '\n' }));
+    setActiveFilePath(name);
+    setNewFileName('');
+    setShowAddFileModal(false);
+  }
 
+  function handleDeleteFile(pathToDelete) {
+    if (Object.keys(projectFilesMap).length <= 1) {
+      alert('You must have at least one file in the workspace.');
+      return;
+    }
+    if (!confirm(`Delete ${pathToDelete}?`)) return;
+    const nextMap = { ...projectFilesMap };
+    delete nextMap[pathToDelete];
+    setProjectFilesMap(nextMap);
+    if (activeFilePath === pathToDelete) {
+      setActiveFilePath(Object.keys(nextMap)[0]);
+    }
+  }
+
+  function togglePackage(pkgId) {
+    setFormData(prev => {
+      const exists = prev.requiredPackages.includes(pkgId);
+      return {
+        ...prev,
+        requiredPackages: exists ? prev.requiredPackages.filter(p => p !== pkgId) : [...prev.requiredPackages, pkgId]
+      };
+    });
+  }
 
   return (
-    <div className="grid grid-cols-2 gap-6">
-      {/* Left: Question Metadata & Starter Code */}
-      <div className="space-y-6">
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Question Details</h3>
+    <div className="flex flex-col lg:flex-row gap-6 min-h-[750px]">
+      {/* Left Column: LeetCode-style dynamic specification & configuration panel */}
+      <div className="flex-1 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Left Tabs */}
+        <div className="flex border-b border-gray-200 bg-gray-50 px-4 pt-3 gap-2">
+          <button
+            onClick={() => setLeftTab('details')}
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors ${
+              leftTab === 'details' ? 'bg-white text-purple-600 border-t-2 border-purple-600 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            General Details
+          </button>
+          <button
+            onClick={() => setLeftTab('packages_mock')}
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors flex items-center gap-1.5 ${
+              leftTab === 'packages_mock' ? 'bg-white text-purple-600 border-t-2 border-purple-600 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            <span>Packages & Mocks</span>
+            {formData.requiredPackages.length > 0 && (
+              <span className="px-1.5 py-0.2 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">
+                {formData.requiredPackages.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setLeftTab('grading')}
+            className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors ${
+              leftTab === 'grading' ? 'bg-white text-purple-600 border-t-2 border-purple-600 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            Grading & Assertions
+          </button>
+        </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input
-                type="text"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Reverse a String"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Write a function that reverses a string..."
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
+        {/* Left Tab Content */}
+        <div className="p-6 flex-1 overflow-y-auto space-y-6">
+          {leftTab === 'details' && (
+            <div className="space-y-4 animate-fadeIn">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
-                <select
-                  value={formData.level}
-                  onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  {levels?.length ? (
-                    levels.map(level => (
-                      <option key={level.level_code} value={level.level_code}>
-                        Level {level.level_code}
-                      </option>
-                    ))
-                  ) : (
-                    <option value={formData.level}>Level {formData.level}</option>
-                  )}
-                </select>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Question Title</label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="e.g. Build an Interactive Shopping Cart"
+                />
               </div>
 
-            </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Curriculum Level</label>
+                  <select
+                    value={formData.level}
+                    onChange={(e) => setFormData({ ...formData, level: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-medium"
+                  >
+                    {levels?.length ? (
+                      levels.map(lvl => (
+                        <option key={lvl.level_code} value={lvl.level_code}>
+                          Level {lvl.level_code} - {lvl.title || lvl.assessment_type}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={formData.level}>Level {formData.level}</option>
+                    )}
+                  </select>
+                </div>
+                <div className="flex items-end pb-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isActive}
+                      onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                      className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                    />
+                    <span className="text-sm font-semibold text-gray-700">Active in Question Bank</span>
+                  </label>
+                </div>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="active"
-                checked={formData.isActive}
-                onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <label htmlFor="active" className="text-sm font-medium text-gray-700">Active</label>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Problem Description & Instructions</label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={10}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm leading-relaxed"
+                  placeholder="Provide clear Markdown instructions, goals, and requirements for the student..."
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          {leftTab === 'packages_mock' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <h4 className="text-sm font-bold text-purple-900 mb-1">Dynamic Package Selector (Levels 2C–3C+)</h4>
+                <p className="text-xs text-purple-700 mb-3">
+                  Check any third-party Flutter/Dart packages required for this problem. These will be automatically injected into <code>pubspec.yaml</code> during compilation.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {AVAILABLE_PACKAGES.map(pkg => (
+                    <label key={pkg.id} className="flex items-center gap-2 bg-white p-2 rounded border border-purple-100 hover:border-purple-300 cursor-pointer shadow-2xs transition-all">
+                      <input
+                        type="checkbox"
+                        checked={formData.requiredPackages.includes(pkg.id)}
+                        onChange={() => togglePackage(pkg.id)}
+                        className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                      />
+                      <span className="text-xs font-mono font-medium text-gray-800">{pkg.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200 pt-5 space-y-4">
+                <h4 className="text-sm font-bold text-gray-800">Mock Backend API & Storage Configuration</h4>
+                <p className="text-xs text-gray-500">
+                  Configure simulated REST endpoints and SQLite database seeders for Level 3C, 5, and 6 networking/storage tasks.
+                </p>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Mock API Route Subpath</label>
+                  <div className="flex items-center">
+                    <span className="inline-flex items-center px-3 py-2 rounded-l-lg border border-r-0 border-gray-300 bg-gray-100 text-gray-500 text-xs font-mono">
+                      /api/mock/{question?.id || 'id'}/
+                    </span>
+                    <input
+                      type="text"
+                      value={formData.mockApiRoute}
+                      onChange={(e) => setFormData({ ...formData, mockApiRoute: e.target.value })}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-r-lg focus:ring-2 focus:ring-purple-500 text-xs font-mono"
+                      placeholder="items  or  users/login"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Mock API Response Body (JSON / Text)</label>
+                  <textarea
+                    value={formData.mockApiResponse}
+                    onChange={(e) => setFormData({ ...formData, mockApiResponse: e.target.value })}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-mono text-xs"
+                    placeholder='[{"id": 1, "name": "MacBook Pro", "price": 1999}, {"id": 2, "name": "iPhone 15", "price": 999}]'
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">Mock SQLite Database Seeder (JSON Rows / SQL)</label>
+                  <textarea
+                    value={formData.mockDbSeed}
+                    onChange={(e) => setFormData({ ...formData, mockDbSeed: e.target.value })}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-mono text-xs"
+                    placeholder='{"table": "todos", "rows": [{"id": 1, "task": "Learn Riverpod", "done": 0}]}'
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {leftTab === 'grading' && (
+            <div className="space-y-5 animate-fadeIn">
+              <div>
+                <label className="block text-sm font-bold text-gray-800 mb-1">
+                  Required Widgets (Automated UI Scoring)
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  List widget class names (one per line) that must appear in the student's UI hierarchy.
+                </p>
+                <textarea
+                  value={formData.uiRequiredWidgets}
+                  onChange={(e) => setFormData({ ...formData, uiRequiredWidgets: e.target.value })}
+                  rows={5}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-xs font-mono"
+                  placeholder="Scaffold&#10;AppBar&#10;ListView&#10;FloatingActionButton"
+                />
+              </div>
+
+              <div className="border-t border-gray-200 pt-5">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-bold text-gray-800">
+                    Custom Test Assertions (`test/solution_test.dart`)
+                  </label>
+                  <span className="text-[11px] font-semibold text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
+                    Advanced Interactive Grading
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mb-2">
+                  Write Dart/Flutter test suite code to verify widget state transitions, button taps, controllers, or navigation. Leave blank to use default automated grading.
+                </p>
+                <textarea
+                  value={formData.customTestCode}
+                  onChange={(e) => setFormData({ ...formData, customTestCode: e.target.value })}
+                  rows={10}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-xs font-mono bg-slate-50 text-slate-800 shadow-inner"
+                  placeholder="import 'package:flutter_test/flutter_test.dart';&#10;import '../lib/solution.dart';&#10;&#10;void main() {&#10;  testWidgets('Verify counter increments on button tap', (tester) async {&#10;    await tester.pumpWidget(MaterialApp(home: buildUI()));&#10;    expect(find.text('0'), findsOneWidget);&#10;    await tester.tap(find.byType(FloatingActionButton));&#10;    await tester.pump();&#10;    expect(find.text('1'), findsOneWidget);&#10;  });&#10;}"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Starter Code</h3>
-          <textarea
-            value={formData.starterCode}
-            onChange={(e) => setFormData({ ...formData, starterCode: e.target.value })}
-            rows={12}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-            placeholder="String reverseString(String input) {&#10;  // write your code here&#10;}"
-          />
-        </div>
-
-        <div className="flex items-center gap-3">
+        {/* Footer Actions */}
+        <div className="p-4 bg-gray-50 border-t border-gray-200 flex items-center gap-3">
           <button
             onClick={handleSave}
             disabled={loading}
-            className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+            className="flex-1 py-2.5 px-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors shadow-sm disabled:opacity-50"
           >
-            {loading ? 'Saving...' : question?.id ? 'Update Question' : 'Save Question'}
+            {loading ? 'Saving Question...' : question?.id ? 'Update Question' : 'Create Question'}
           </button>
           <button
             onClick={onCancel}
-            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            className="py-2.5 px-5 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-100 transition-colors"
           >
             Cancel
           </button>
         </div>
       </div>
 
-      {/* Right: Test Cases or UI Reference */}
-      <div className="space-y-6">
-        {isUiCompare ? (
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">UI Reference Image</h3>
-            <div className="space-y-4">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setSelectedImage(e.target.files?.[0] || null)}
-                className="block w-full text-sm text-gray-600"
-              />
-              <button
-                onClick={handleUploadReference}
-                disabled={uploading}
-                className="px-4 py-2 rounded-md bg-blue-600 text-white"
-              >
-                {uploading ? 'Uploading...' : 'Upload Reference Image'}
-              </button>
-              {formData.referenceImageUrl && (
-                <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
-                  <div className="text-xs uppercase text-gray-500 mb-2">Preview</div>
-                  <img
-                    src={`${API_ORIGIN}${formData.referenceImageUrl}`}
-                    alt="Reference preview"
-                    className="max-h-80 w-full object-contain rounded-md"
-                  />
-                </div>
+      {/* Right Column: LeetCode-style dynamic IDE Workspace & Test Cases */}
+      <div className="flex-1 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Right Tabs */}
+        <div className="flex border-b border-gray-200 bg-gray-50 px-4 pt-3 gap-2 justify-between items-center">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setRightTab('code')}
+              className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors flex items-center gap-1.5 ${
+                rightTab === 'code' ? 'bg-white text-blue-600 border-t-2 border-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              <span>Code Workspace</span>
+              {isMultiFile && (
+                <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
+                  {Object.keys(projectFilesMap).length} files
+                </span>
               )}
+            </button>
+            <button
+              onClick={() => setRightTab('testcases')}
+              className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors ${
+                rightTab === 'testcases' ? 'bg-white text-blue-600 border-t-2 border-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              Test Cases ({testCases.length})
+            </button>
+            <button
+              onClick={() => setRightTab('resources')}
+              className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-colors ${
+                rightTab === 'resources' ? 'bg-white text-blue-600 border-t-2 border-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              Design & Assets
+            </button>
+          </div>
 
-              <div className="pt-4 border-t border-gray-200">
-                <h4 className="text-sm font-semibold text-gray-800 mb-2">Resource Bundles</h4>
-                <p className="text-xs text-gray-500 mb-3">
-                  Upload images, fonts, or other assets. These will be available in the <code>assets/images/</code> folder during tests.
-                </p>
+          <div className="pb-1">
+            <button
+              onClick={() => {
+                if (!isMultiFile) {
+                  setIsMultiFile(true);
+                  setProjectFilesMap({ "lib/main.dart": formData.starterCode || "// Write code here\n" });
+                } else {
+                  if (confirm("Switch to Single File mode? Only lib/main.dart will be kept.")) {
+                    setIsMultiFile(false);
+                    setFormData(prev => ({ ...prev, starterCode: projectFilesMap["lib/main.dart"] || "" }));
+                  }
+                }
+              }}
+              className="text-xs font-bold px-2.5 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
+            >
+              {isMultiFile ? "Switch to Single File" : "Enable Multi-File Project"}
+            </button>
+          </div>
+        </div>
 
-                <div className="space-y-3">
-                  <input
-                    type="file"
-                    multiple
-                    onChange={handleUploadResources}
-                    className="block w-full text-sm text-gray-600"
-                  />
-
-                  {formData.resourceUrls.length > 0 && (
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {formData.resourceUrls.map((url, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
-                          <div className="flex items-center gap-2 overflow-hidden">
-                            <span className="text-xs font-mono text-gray-600 truncate max-w-[150px]">
-                              {url.split('/').pop()}
+        {/* Right Tab Content */}
+        <div className="p-6 flex-1 flex flex-col overflow-y-auto">
+          {rightTab === 'code' && (
+            <div className="flex-1 flex flex-col animate-fadeIn space-y-3">
+              {isMultiFile ? (
+                <div className="flex-1 flex flex-col space-y-3">
+                  {/* Multi-File Tab Bar */}
+                  <div className="flex items-center justify-between border-b border-gray-200 pb-2 gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {Object.keys(projectFilesMap).map(filePath => (
+                        <div
+                          key={filePath}
+                          onClick={() => setActiveFilePath(filePath)}
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono font-semibold cursor-pointer border transition-all ${
+                            activeFilePath === filePath
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                              : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
+                          }`}
+                        >
+                          <span>{filePath}</span>
+                          {Object.keys(projectFilesMap).length > 1 && (
+                            <span
+                              onClick={(e) => { e.stopPropagation(); handleDeleteFile(filePath); }}
+                              className="hover:text-red-300 font-bold ml-1"
+                              title="Delete File"
+                            >
+                              ✕
                             </span>
-                            <a href={`${API_ORIGIN}${url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">
-                              View
-                            </a>
-                          </div>
-                          <button
-                            onClick={() => handleDeleteResource(url)}
-                            className="text-red-500 hover:text-red-700 p-1"
-                            title="Delete"
-                          >
-                            <span className="text-xs">✕</span>
-                          </button>
+                          )}
                         </div>
                       ))}
                     </div>
+                    <button
+                      onClick={() => setShowAddFileModal(true)}
+                      className="px-2.5 py-1 bg-emerald-600 text-white rounded text-xs font-bold hover:bg-emerald-700 transition-colors flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add File
+                    </button>
+                  </div>
+
+                  {/* Add File Modal / Input Inline */}
+                  {showAddFileModal && (
+                    <div className="flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                      <input
+                        type="text"
+                        value={newFileName}
+                        onChange={(e) => setNewFileName(e.target.value)}
+                        placeholder="e.g. lib/models/user.dart or lib/widgets/navbar.dart"
+                        className="flex-1 px-3 py-1.5 border border-gray-300 rounded text-xs font-mono"
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleAddFile}
+                        className="px-3 py-1.5 bg-emerald-600 text-white rounded text-xs font-bold hover:bg-emerald-700"
+                      >
+                        Create
+                      </button>
+                      <button
+                        onClick={() => setShowAddFileModal(false)}
+                        className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded text-xs font-bold hover:bg-gray-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   )}
+
+                  {/* Editor for Active File */}
+                  <div className="flex-1 flex flex-col">
+                    <div className="flex justify-between items-center bg-slate-100 text-slate-700 border border-slate-200 border-b-0 px-3 py-2 rounded-t-lg text-xs font-mono font-semibold">
+                      <span>{activeFilePath}</span>
+                      <span className="text-slate-500 font-sans">Dart / Flutter Workspace</span>
+                    </div>
+                    <textarea
+                      value={projectFilesMap[activeFilePath] || ""}
+                      onChange={(e) => setProjectFilesMap({ ...projectFilesMap, [activeFilePath]: e.target.value })}
+                      className="w-full flex-1 min-h-[420px] p-4 bg-white text-slate-800 border border-slate-200 font-mono text-sm rounded-b-lg focus:outline-none focus:ring-1 focus:ring-blue-500 leading-relaxed resize-none shadow-inner"
+                      placeholder="Write Dart code for this file..."
+                    />
+                  </div>
                 </div>
-              </div>
-
-              <div className="pt-4 border-t border-gray-200">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Required Widgets (one per line)
-                </label>
-                <textarea
-                  value={formData.uiRequiredWidgets}
-                  onChange={(e) => setFormData({ ...formData, uiRequiredWidgets: e.target.value })}
-                  rows={6}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
-                  placeholder="Scaffold\nAppBar\nListTile\nBottomNavigationBar"
-                />
-                <p className="text-xs text-gray-500 mt-2">
-                  These are used for automated scoring for UI questions.
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Test Cases</h3>
-
-            {/* Sample Test Cases */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-semibold text-gray-700">Sample Test Cases</h4>
-                <span className="text-xs text-gray-500">Visible to students (2 required)</span>
-              </div>
-              <div className="space-y-2">
-                {sampleTestCases.map((tc, idx) => (
-                  <TestCaseCard key={tc.id} testCase={tc} index={idx + 1} />
-                ))}
-                {sampleTestCases.length === 0 && (
-                  <p className="text-sm text-gray-500 py-4 text-center bg-gray-50 rounded-lg">
-                    No sample test cases yet
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Hidden Test Cases */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-semibold text-gray-700">Hidden Test Cases</h4>
-                <span className="text-xs text-gray-500">Hidden from students (8 required)</span>
-              </div>
-              <div className="space-y-2">
-                {hiddenTestCases.map((tc, idx) => (
-                  <TestCaseCard key={tc.id} testCase={tc} index={idx + 1} isHidden />
-                ))}
-                {hiddenTestCases.length === 0 && (
-                  <p className="text-sm text-gray-500 py-4 text-center bg-gray-50 rounded-lg">
-                    No hidden test cases yet
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Add Test Case Form */}
-            {question?.id && (
-              <div className="border-t border-gray-200 pt-4">
-                <h4 className="text-sm font-semibold text-gray-700 mb-3">Add Test Case</h4>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Input</label>
-                    <input
-                      type="text"
-                      value={testCaseForm.input}
-                      onChange={(e) => setTestCaseForm({ ...testCaseForm, input: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
-                      placeholder="hello"
-                    />
+              ) : (
+                <div className="flex-1 flex flex-col space-y-2">
+                  <div className="flex justify-between items-center bg-slate-100 text-slate-700 border border-slate-200 border-b-0 px-3 py-2 rounded-t-lg text-xs font-mono font-semibold">
+                    <span>lib/solution.dart (Single File Mode)</span>
+                    <span className="text-slate-500 font-sans">Starter Code</span>
                   </div>
+                  <textarea
+                    value={formData.starterCode}
+                    onChange={(e) => setFormData({ ...formData, starterCode: e.target.value })}
+                    className="w-full flex-1 min-h-[460px] p-4 bg-white text-slate-800 border border-slate-200 font-mono text-sm rounded-b-lg focus:outline-none focus:ring-1 focus:ring-blue-500 leading-relaxed resize-none shadow-inner"
+                    placeholder="Widget buildUI() {&#10;  return Scaffold(&#10;    appBar: AppBar(title: Text('App')),&#10;  );&#10;}"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Expected Output</label>
-                    <input
-                      type="text"
-                      value={testCaseForm.expectedOutput}
-                      onChange={(e) => setTestCaseForm({ ...testCaseForm, expectedOutput: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm font-mono"
-                      placeholder="olleh"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={testCaseForm.isHidden}
-                        onChange={(e) => setTestCaseForm({ ...testCaseForm, isHidden: e.target.checked })}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-xs font-medium text-gray-700">Hidden from students</span>
-                    </label>
-
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs font-medium text-gray-600">Order:</label>
-                      <input
-                        type="number"
-                        value={testCaseForm.orderNo}
-                        onChange={(e) => setTestCaseForm({ ...testCaseForm, orderNo: parseInt(e.target.value) })}
-                        className="w-16 px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                      />
+          {rightTab === 'testcases' && (
+            <div className="space-y-6 animate-fadeIn">
+              {isUiCompare ? (
+                <div className="p-6 bg-blue-50 rounded-lg border border-blue-200 text-center">
+                  <h4 className="text-sm font-bold text-blue-900 mb-1">UI Compare / Interactive Flutter Level</h4>
+                  <p className="text-xs text-blue-700">
+                    This question uses automated UI widget hierarchy scoring and custom assertions. Standard input/output test cases are disabled.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-gray-800">Sample Test Cases (Visible)</h4>
+                      <span className="text-xs text-gray-500">2 recommended</span>
+                    </div>
+                    <div className="space-y-2">
+                      {sampleTestCases.map((tc, idx) => (
+                        <TestCaseCard key={tc.id} testCase={tc} index={idx + 1} />
+                      ))}
+                      {sampleTestCases.length === 0 && (
+                        <p className="text-xs text-gray-500 py-4 text-center bg-gray-50 rounded-lg">No sample test cases yet</p>
+                      )}
                     </div>
                   </div>
 
+                  <div className="space-y-4 pt-4 border-t border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-gray-800">Hidden Test Cases (Grading)</h4>
+                      <span className="text-xs text-gray-500">8 recommended</span>
+                    </div>
+                    <div className="space-y-2">
+                      {hiddenTestCases.map((tc, idx) => (
+                        <TestCaseCard key={tc.id} testCase={tc} index={idx + 1} isHidden />
+                      ))}
+                      {hiddenTestCases.length === 0 && (
+                        <p className="text-xs text-gray-500 py-4 text-center bg-gray-50 rounded-lg">No hidden test cases yet</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {question?.id ? (
+                    <div className="border-t border-gray-200 pt-5 space-y-3">
+                      <h4 className="text-sm font-bold text-gray-800">Add New Test Case</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-600 mb-1">Input Arguments</label>
+                          <input
+                            type="text"
+                            value={testCaseForm.input}
+                            onChange={(e) => setTestCaseForm({ ...testCaseForm, input: e.target.value })}
+                            className="w-full px-3 py-1.5 border border-gray-300 rounded text-xs font-mono"
+                            placeholder="e.g. 5, 10"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-600 mb-1">Expected Output</label>
+                          <input
+                            type="text"
+                            value={testCaseForm.expectedOutput}
+                            onChange={(e) => setTestCaseForm({ ...testCaseForm, expectedOutput: e.target.value })}
+                            className="w-full px-3 py-1.5 border border-gray-300 rounded text-xs font-mono"
+                            placeholder="e.g. 15"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between pt-1">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={testCaseForm.isHidden}
+                            onChange={(e) => setTestCaseForm({ ...testCaseForm, isHidden: e.target.checked })}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+                          />
+                          <span className="text-xs font-semibold text-gray-700">Hidden during student test run</span>
+                        </label>
+                        <button
+                          onClick={handleAddTestCase}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700"
+                        >
+                          Add Test Case
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800 text-center font-semibold">
+                      Save the question first before adding test cases.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {rightTab === 'resources' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div className="bg-white rounded-lg space-y-4">
+                <h4 className="text-sm font-bold text-gray-800">Reference Design Mockup</h4>
+                <p className="text-xs text-gray-500">
+                  Upload a screenshot or Figma export of the target UI design. Students can toggle this mockup to compare their layout.
+                </p>
+                <div className="flex gap-3 items-center">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setSelectedImage(e.target.files?.[0] || null)}
+                    className="block w-full text-xs text-gray-600"
+                  />
                   <button
-                    onClick={handleAddTestCase}
-                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                    onClick={handleUploadReference}
+                    disabled={uploading}
+                    className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold whitespace-nowrap hover:bg-blue-700"
                   >
-                    Add Test Case
+                    {uploading ? 'Uploading...' : 'Upload Design'}
                   </button>
                 </div>
+                {formData.referenceImageUrl && (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 mt-3">
+                    <div className="text-[11px] font-bold uppercase text-gray-500 mb-2">Active Design Mockup</div>
+                    <img
+                      src={`${API_ORIGIN}${formData.referenceImageUrl}`}
+                      alt="Reference preview"
+                      className="max-h-64 w-full object-contain rounded"
+                    />
+                  </div>
+                )}
               </div>
-            )}
 
-            {!question?.id && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <p className="text-sm text-yellow-700">
-                  Save the question first before adding test cases
+              <div className="border-t border-gray-200 pt-5 space-y-4">
+                <h4 className="text-sm font-bold text-gray-800">Resource Asset Bundles</h4>
+                <p className="text-xs text-gray-500">
+                  Upload images, JSON datasets, or custom fonts. These files are automatically copied to <code>assets/images/</code> in the student's Flutter Docker container.
                 </p>
+                <input
+                  type="file"
+                  multiple
+                  onChange={handleUploadResources}
+                  className="block w-full text-xs text-gray-600"
+                />
+
+                {formData.resourceUrls.length > 0 && (
+                  <div className="space-y-2 max-h-56 overflow-y-auto">
+                    {formData.resourceUrls.map((url, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                        <span className="text-xs font-mono text-gray-700 truncate max-w-[200px]">
+                          {url.split('/').pop()}
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <a href={`${API_ORIGIN}${url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline font-semibold">
+                            View
+                          </a>
+                          <button
+                            onClick={() => handleDeleteResource(url)}
+                            className="text-red-500 hover:text-red-700 text-xs font-bold"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -659,20 +1013,20 @@ function TestCaseCard({ testCase, index, isHidden }) {
     <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-semibold text-gray-600">TC #{index}</span>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-xs font-bold text-gray-700">Test Case #{index}</span>
             {isHidden && (
-              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full">Hidden</span>
+              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-full">Hidden</span>
             )}
           </div>
-          <div className="space-y-1">
-            <div>
-              <span className="text-xs text-gray-500">Input:</span>
-              <code className="ml-2 text-xs text-gray-800 font-mono">{testCase.input}</code>
+          <div className="grid grid-cols-2 gap-2 font-mono text-xs">
+            <div className="bg-white p-1.5 rounded border border-gray-200">
+              <span className="text-gray-400 font-sans block text-[10px]">Input:</span>
+              <span className="text-gray-800">{testCase.input || 'null'}</span>
             </div>
-            <div>
-              <span className="text-xs text-gray-500">Output:</span>
-              <code className="ml-2 text-xs text-gray-800 font-mono">{testCase.expected_output}</code>
+            <div className="bg-white p-1.5 rounded border border-gray-200">
+              <span className="text-gray-400 font-sans block text-[10px]">Expected Output:</span>
+              <span className="text-gray-800">{testCase.expected_output || 'null'}</span>
             </div>
           </div>
         </div>

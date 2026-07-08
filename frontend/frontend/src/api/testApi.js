@@ -64,6 +64,21 @@ export function executeUiSubmit(payload) {
   });
 }
 
+export function fetchExecutionRun(runId) {
+  return request(`${API_BASE}/execute/flutter/runs/${runId}`);
+}
+
+export function fetchExecutionRuns() {
+  return request(`${API_BASE}/execute/flutter/runs`);
+}
+
+export function cancelExecutionRun(runId, payload = {}) {
+  return request(`${API_BASE}/execute/flutter/runs/${runId}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 // 5. Finish test
 export function finishTest(payload) {
   return request(`${API_BASE}/test/finish`, {

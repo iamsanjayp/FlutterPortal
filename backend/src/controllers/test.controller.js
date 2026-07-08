@@ -1,5 +1,5 @@
 import pool from "../config/db.js";
-import { getCurrentLevel, getLevelConfig, getNextLevel, setCurrentLevel } from "../utils/level.js";
+import { getCurrentLevel, getLevelConfig, getNextLevel, setCurrentLevel, isUiAssessment } from "../utils/level.js";
 import { getActiveSchedule, getActiveScheduleForUser, getScheduleForTime } from "../utils/schedule.js";
 
 export async function startTest(req, res) {
@@ -191,7 +191,7 @@ export async function getTestData(req, res) {
 
   const [questions] = await pool.query(
     `
-    SELECT p.id, p.title, p.description, p.starter_code, p.ui_required_widgets, tsq.order_no
+    SELECT p.id, p.title, p.description, p.starter_code, p.ui_required_widgets, p.project_files, p.required_packages, p.mock_api_route, p.mock_api_response, p.mock_db_seed, p.custom_test_code, tsq.order_no
     FROM test_session_questions tsq
     JOIN problems p ON p.id = tsq.problem_id
     WHERE tsq.test_session_id = ?
@@ -204,6 +204,19 @@ export async function getTestData(req, res) {
     const isTestCase = assessmentType === "TEST_CASE";
     q.uiRequiredWidgets = isTestCase ? [] : parseJsonArray(q.ui_required_widgets);
     delete q.ui_required_widgets;
+
+    q.projectFiles = q.project_files || null;
+    delete q.project_files;
+    q.requiredPackages = q.required_packages || null;
+    delete q.required_packages;
+    q.mockApiRoute = q.mock_api_route || null;
+    delete q.mock_api_route;
+    q.mockApiResponse = q.mock_api_response || null;
+    delete q.mock_api_response;
+    q.mockDbSeed = q.mock_db_seed || null;
+    delete q.mock_db_seed;
+    q.customTestCode = q.custom_test_code || null;
+    delete q.custom_test_code;
 
     if (assessmentType === "TEST_CASE") {
       const [cases] = await pool.query(
@@ -230,6 +243,7 @@ export async function getTestData(req, res) {
         [q.id]
       );
       q.referenceImageUrl = problemRow?.reference_image_url || null;
+      q.referenceMockupUrl = problemRow?.reference_image_url || null;
       let parsedResources = [];
       if (problemRow?.resource_urls) {
         try { parsedResources = JSON.parse(problemRow.resource_urls); } catch { }
@@ -311,7 +325,7 @@ export async function getTestMeta(req, res) {
     if (session.status === "IN_PROGRESS" && (shouldEndBySchedule || shouldEndByDuration)) {
       let nextStatus = "FAIL";
 
-      if (assessmentType === "UI_COMPARE") {
+      if (isUiAssessment(assessmentType)) {
         const [[submissionRow]] = await pool.query(
           "SELECT COUNT(*) AS totalCount FROM test_session_submissions WHERE test_session_id = ?",
           [sessionId]
@@ -376,7 +390,7 @@ export async function finishTest(req, res) {
 
     const { assessmentType } = await getLevelConfig(session.level);
 
-    if (assessmentType === "UI_COMPARE") {
+    if (isUiAssessment(assessmentType)) {
       const [[submissionRow]] = await pool.query(
         "SELECT COUNT(*) AS totalCount FROM test_session_submissions WHERE test_session_id = ?",
         [sessionId]

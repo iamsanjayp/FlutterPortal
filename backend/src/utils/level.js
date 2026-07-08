@@ -55,12 +55,14 @@ export async function getLevelConfig(level) {
       [level]
     );
 
-    if (rows.length) {
+    if (rows.length > 0) {
       const row = rows[0];
+      const rawType = row.assessment_type || "TEST_CASE";
+      const assessmentType = (rawType === "UI_COMPARE" || rawType === "FLUTTER_UI") ? "FLUTTER_UI" : "TEST_CASE";
       return {
         questionCount: row.question_count ?? 2,
         durationMinutes: row.duration_minutes ?? 60,
-        assessmentType: row.assessment_type || "TEST_CASE",
+        assessmentType,
         passThreshold: row.pass_threshold ?? 85,
         isActive: row.is_active === 1,
         studentOverview: row.student_overview || "",
@@ -78,7 +80,7 @@ export async function getLevelConfig(level) {
   return {
     questionCount: isLowerLevel ? 2 : 1,
     durationMinutes: isLowerLevel ? 60 : 90,
-    assessmentType: level === "1A" ? "TEST_CASE" : "UI_COMPARE",
+    assessmentType: level === "1A" ? "TEST_CASE" : "FLUTTER_UI",
     passThreshold: 85,
     isActive: true,
     studentOverview: "",
@@ -87,6 +89,10 @@ export async function getLevelConfig(level) {
     portions: [],
     resources: [],
   };
+}
+
+export function isUiAssessment(type) {
+  return type === "FLUTTER_UI" || type === "UI_COMPARE";
 }
 
 export async function getCurrentLevel(userId) {

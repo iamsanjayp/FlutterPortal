@@ -7,6 +7,9 @@ node_modules/
 # Build outputs
 dist/
 build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
 
 # OS files
 .DS_Store
@@ -15,3 +18,16 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Backend runtime and test directories
+backend/src/execution/flutter/failed_runs/
+backend/src/execution/flutter/temp_run_test/
+backend/src/execution/flutter/template/.dart_tool/
+backend/src/execution/flutter/template_ui/.dart_tool/
+backend/uploads/ui_previews/*
+!backend/uploads/ui_previews/.gitkeep
+backend/uploads/ui_resources/*
+!backend/uploads/ui_resources/.gitkeep
+backend/uploads/ui_samples/*
+!backend/uploads/ui_samples/.gitkeep
+*.log

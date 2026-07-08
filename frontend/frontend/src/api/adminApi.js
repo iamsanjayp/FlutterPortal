@@ -161,6 +161,14 @@ export function fetchUiSubmissions(params = {}) {
   return request(`${API_BASE}/api/admin/submissions/ui${query ? `?${query}` : ""}`);
 }
 
+export function fetchExecutionRuns() {
+  return request(`${API_BASE}/api/execute/flutter/runs`);
+}
+
+export function fetchExecutionRun(runId) {
+  return request(`${API_BASE}/api/execute/flutter/runs/${runId}`);
+}
+
 export function updateSubmissionStatus(id, payload) {
   return request(`${API_BASE}/api/admin/submissions/${id}/status`, {
     method: "PATCH",
@@ -346,6 +354,8 @@ export async function uploadProblemReferenceImage(problemId, file) {
 
   return res.json();
 }
+
+export const uploadProblemReferenceMockup = uploadProblemReferenceImage;
 
 export async function uploadProblemResources(problemId, files) {
   const formData = new FormData();

@@ -202,7 +202,7 @@ function TestRoute() {
 
   return (
     <div className="w-screen h-screen overflow-hidden">
-      {assessmentType === "UI_COMPARE" ? (
+      {(assessmentType === "FLUTTER_UI" || assessmentType === "UI_COMPARE") ? (
         <UITestPage
           sessionId={sessionId}
           durationMinutes={durationMinutes}

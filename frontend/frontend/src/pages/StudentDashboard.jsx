@@ -60,12 +60,12 @@ export default function StudentDashboard({ user, level, durationMinutes, questio
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-blue-50 px-4 py-6 md:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="overflow-hidden rounded-3xl border border-white/60 bg-slate-950 text-white shadow-2xl shadow-slate-200/60">
+        <section className="overflow-hidden rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-500/10">
           <div className="relative px-6 py-8 md:px-10 md:py-10">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.25),_transparent_35%),radial-gradient(circle_at_bottom_left,_rgba(168,85,247,0.2),_transparent_30%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.15),_transparent_35%),radial-gradient(circle_at_bottom_left,_rgba(255,255,255,0.1),_transparent_30%)]" />
             <div className="relative grid gap-6 lg:grid-cols-[1.3fr_0.8fr] lg:items-end">
               <div className="space-y-5">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-blue-100">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
                   <Sparkles className="h-3.5 w-3.5" />
                   Student Dashboard
                 </div>

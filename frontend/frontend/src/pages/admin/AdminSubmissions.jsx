@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Search, Code, CheckCircle, XCircle, AlertCircle, Eye, FileText } from 'lucide-react';
+import { Search, Code, CheckCircle, XCircle, AlertCircle, Eye, FileText, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { fetchSchedules, fetchSubmissions, updateSubmissionStatus, deleteSubmission, reinstateSession } from '../../api/adminApi';
 import { API_BASE_ROOT } from '../../api/apiBase.js';
 
@@ -100,7 +101,10 @@ export default function AdminSubmissions() {
     const search = searchTerm.toLowerCase();
     const matchesSearch = !searchTerm ||
       sub.student_name?.toLowerCase().includes(search) ||
+      sub.user_email?.toLowerCase().includes(search) ||
+      sub.student_roll_no?.toLowerCase().includes(search) ||
       sub.problem_title?.toLowerCase().includes(search) ||
+      sub.schedule_name?.toLowerCase().includes(search) ||
       String(sub.user_id || '').includes(search) ||
       String(sub.test_session_id || '').includes(search);
 
@@ -108,6 +112,44 @@ export default function AdminSubmissions() {
 
     return matchesSearch && matchesStatus;
   });
+
+  function exportToExcel() {
+    if (!filteredSubmissions.length) {
+      alert('No submissions to export');
+      return;
+    }
+
+    const exportData = filteredSubmissions.map((sub, index) => {
+      const schedule = schedules.find(s => String(s.id) === String(sub.test_session_id || selectedScheduleId)) || {};
+      return {
+        "S.No": index + 1,
+        "Submission ID": sub.id,
+        "Student Name": sub.student_name || sub.user_name || sub.user_email || 'N/A',
+        "Student Email": sub.user_email || 'N/A',
+        "Roll Number": sub.student_roll_no || 'N/A',
+        "Test Slot": sub.schedule_name || schedule.name || `Session #${sub.test_session_id}`,
+        "Problem ID": sub.problem_id,
+        "Problem Title": sub.problem_title || `Problem #${sub.problem_id}`,
+        "Status": sub.status,
+        "Score (%)": sub.score || 0,
+        "Match Percent (%)": sub.match_percent || sub.score || 0,
+        "Submitted At": sub.created_at ? new Date(sub.created_at).toLocaleString() : sub.updated_at ? new Date(sub.updated_at).toLocaleString() : 'N/A',
+        "Code Length (Chars)": sub.code ? String(sub.code).length : 0
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Coding Test Results");
+
+    const slotName = selectedScheduleId
+      ? (schedules.find(s => String(s.id) === String(selectedScheduleId))?.name || `Slot_${selectedScheduleId}`)
+      : "All_Slots";
+    const cleanSlotName = slotName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `Coding_Test_Results_${cleanSlotName}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+    XLSX.writeFile(workbook, fileName);
+  }
 
   if (selectedSubmission) {
     return (
@@ -164,6 +206,14 @@ export default function AdminSubmissions() {
             <option value="PASS">PASS</option>
             <option value="FAIL">FAIL</option>
           </select>
+          <button
+            onClick={exportToExcel}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer"
+            title="Export filtered slot results to Excel (.xlsx)"
+          >
+            <Download className="w-4 h-4" />
+            <span className="whitespace-nowrap">Export XLSX</span>
+          </button>
         </div>
       </div>
 
@@ -273,6 +323,19 @@ export default function AdminSubmissions() {
 }
 
 function SubmissionDetail({ submission, onClose, onUpdateSubmission, onDeleteSubmission, onReinstateSession }) {
+  function renderPreview(url, title) {
+    if (!url) return null;
+
+    return (
+      <iframe
+        src={`${API_ORIGIN}${url}`}
+        title={title}
+        className="w-full h-[620px] rounded-md border border-gray-200 bg-white"
+        sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals"
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -311,6 +374,42 @@ function SubmissionDetail({ submission, onClose, onUpdateSubmission, onDeleteSub
         {/* Test Results */}
         <div className="space-y-6">
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Execution Run</h3>
+            {submission.execution_run_id ? (
+              <div className="space-y-3 text-sm text-gray-700">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-gray-600">Run ID</span>
+                  <span className="font-medium break-all text-right">{submission.execution_run_id}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-gray-600">Status</span>
+                  <span className="font-medium">{submission.execution_run_status || '-'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-gray-600">Started</span>
+                  <span className="font-medium text-right">
+                    {submission.execution_started_at ? new Date(submission.execution_started_at).toLocaleString() : '-'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-gray-600">Finished</span>
+                  <span className="font-medium text-right">
+                    {submission.execution_finished_at ? new Date(submission.execution_finished_at).toLocaleString() : 'Live / pending'}
+                  </span>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-gray-400 mb-2">Result</div>
+                  <pre className="bg-gray-50 rounded-lg border border-gray-200 p-3 text-xs whitespace-pre-wrap break-words max-h-56 overflow-y-auto">
+                    {submission.execution_result_json || 'No execution result recorded.'}
+                  </pre>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500">No execution run recorded for this submission.</div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Test Results</h3>
             
             <div className="space-y-3">
@@ -339,37 +438,33 @@ function SubmissionDetail({ submission, onClose, onUpdateSubmission, onDeleteSub
                   <span className="text-sm font-medium text-gray-800">{submission.score}%</span>
                 </div>
               )}
-              {typeof submission.match_percent === 'number' && (
+              {(typeof submission.widgetScore === 'number' || typeof submission.match_percent === 'number') && (
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Match %</span>
-                  <span className="text-sm font-medium text-gray-800">{submission.match_percent}%</span>
+                  <span className="text-sm text-gray-600">Widget Score</span>
+                  <span className="text-sm font-medium text-gray-800">{submission.widgetScore ?? submission.match_percent}%</span>
                 </div>
               )}
             </div>
           </div>
 
-          {(submission.reference_image_url || submission.preview_image_url) && (
+          {(submission.referenceMockupUrl || submission.reference_image_url || submission.previewUrl || submission.preview_image_url) && (
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">UI Comparison</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Interactive UI Evaluation</h3>
               <div className="space-y-4">
-                {submission.reference_image_url && (
+                {(submission.referenceMockupUrl || submission.reference_image_url) && (
                   <div>
-                    <div className="text-xs uppercase text-gray-500 mb-2">Reference</div>
+                    <div className="text-xs uppercase text-gray-500 mb-2">Design Mockup (Reference)</div>
                     <img
-                      src={`${API_ORIGIN}${submission.reference_image_url}`}
-                      alt="Reference"
+                      src={`${API_ORIGIN}${submission.referenceMockupUrl || submission.reference_image_url}`}
+                      alt="Design Mockup"
                       className="w-full rounded-md border border-gray-200 object-contain"
                     />
                   </div>
                 )}
-                {submission.preview_image_url && (
+                {(submission.previewUrl || submission.preview_image_url) && (
                   <div>
-                    <div className="text-xs uppercase text-gray-500 mb-2">Student Output</div>
-                    <img
-                      src={`${API_ORIGIN}${submission.preview_image_url}`}
-                      alt="Preview"
-                      className="w-full rounded-md border border-gray-200 object-contain"
-                    />
+                    <div className="text-xs uppercase text-gray-500 mb-2">Interactive Live Preview</div>
+                    {renderPreview(submission.previewUrl || submission.preview_image_url, "Interactive Live Preview")}
                   </div>
                 )}
               </div>
