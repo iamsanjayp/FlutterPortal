@@ -11,7 +11,7 @@ services:
       MYSQL_ROOT_HOST: "%"
       TZ: Asia/Kolkata
     ports:
-      - "3308:3306"
+      - "3309:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./current_sql_dump:/docker-entrypoint-initdb.d
@@ -42,14 +42,14 @@ services:
       JWT_EXPIRY: ${JWT_EXPIRY}
       JWT_COOKIE_MAX_AGE_MS: ${JWT_COOKIE_MAX_AGE_MS}
       NODE_ENV: production
-      FRONTEND_URL: ${FRONTEND_URL}
-      FRONTEND_URLS: ${FRONTEND_URLS}
+      FRONTEND_URL: "https://pcdp.bitsathy.ac.in/flutter"
+      FRONTEND_URLS: "https://pcdp.bitsathy.ac.in/flutter"
       RESET_SESSION_SECRET: ${RESET_SESSION_SECRET}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL}
     ports:
-      - "5000:5000"  # Backend: internal only (accessed by nginx)
+      - "5003:5000"  # Backend: host 5003 -> container 5000
     volumes:
       - ./backend/uploads:/app/uploads
       - /var/run/docker.sock:/var/run/docker.sock
@@ -58,14 +58,14 @@ services:
     build:
       context: ./frontend/frontend
       args:
-        VITE_API_BASE: auto
-        VITE_API_ORIGIN: auto
+        VITE_API_BASE: "https://pcdp.bitsathy.ac.in/flutter/api"
+        VITE_API_ORIGIN: "https://pcdp.bitsathy.ac.in"
     container_name: mobiledev-frontend
     restart: unless-stopped
     depends_on:
       - backend
     ports:
-      - "8080:80"  # Frontend: change to 443:443 when using HTTPS
+      - "8083:80"  # Frontend: host 8083 -> container 80
 
 volumes:
   mysql_data:
