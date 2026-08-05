@@ -16,14 +16,10 @@ services:
       - mysql_data:/var/lib/mysql
 
   flutter-runner:
-    build:
-      context: ./backend
-      dockerfile: flutter_runner/Dockerfile
-    image: flutter-runner:latest
+    image: flutter-runner:${IMG_TAG}
 
   backend:
-    build:
-      context: ./backend
+    image: mobiledev-backend:${IMG_TAG}
     container_name: mobiledev-backend
     restart: unless-stopped
     depends_on:
@@ -53,11 +49,7 @@ services:
       - /opt/uploads/flutter:/app/uploads
 
   frontend:
-    build:
-      context: ./frontend/frontend
-      args:
-        VITE_API_BASE: "https://pcdp.bitsathy.ac.in/flutter/api"
-        VITE_API_ORIGIN: "https://pcdp.bitsathy.ac.in"
+    image: mobiledev-frontend:${IMG_TAG}
     container_name: mobiledev-frontend
     restart: unless-stopped
     depends_on:

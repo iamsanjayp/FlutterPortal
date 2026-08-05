@@ -48,6 +48,6 @@ RUN if [ -d /tmp/template_ui/fonts ]; then \
 RUN flutter pub cache add google_fonts || true
 
 COPY flutter_runner/run.sh /run.sh
-RUN chmod +x /run.sh
+RUN chmod +x /run.sh && sed -i 's/\r$//' /run.sh
 
 ENTRYPOINT ["/run.sh"]
