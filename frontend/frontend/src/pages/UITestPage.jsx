@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchTest, fetchTestMeta, executeUiPreview, executeUiSubmit, fetchExecutionRun, cancelExecutionRun, finishTest } from "../api/testApi";
 import CodeEditor from "../components/CodeEditor";
-import { API_BASE_ROOT } from "../api/apiBase.js";
 
-const API_ORIGIN = API_BASE_ROOT;
+const API_ORIGIN = typeof window !== "undefined" && window.location?.origin
+  ? window.location.origin
+  : "http://localhost:5173";
+const APP_BASE = import.meta.env.BASE_URL || "/";
+
+function buildPublicUrl(url) {
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  const path = url.startsWith("/") ? url : `/${url}`;
+  const base = APP_BASE.endsWith("/") ? APP_BASE.slice(0, -1) : APP_BASE;
+  return `${API_ORIGIN}${path.startsWith(`${base}/`) ? path : `${base}${path}`}`;
+}
 
 function getQuestionFileMap(codeEntry, fallbackCode = "") {
   if (typeof codeEntry === "object" && codeEntry !== null && Object.keys(codeEntry).length > 0) {
@@ -81,7 +91,7 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
 
     return (
       <iframe
-        src={`${API_ORIGIN}${url}`}
+        src={buildPublicUrl(url)}
         title={title}
         className="w-full h-full bg-white border-0"
         sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals"
@@ -612,7 +622,7 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
                       return (
                         <div key={idx} className="flex items-center gap-3 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
                           <img
-                            src={`${API_ORIGIN}${url}`}
+                            src={buildPublicUrl(url)}
                             alt="Resource thumbnail"
                             className="w-10 h-10 object-contain bg-slate-50 rounded p-1 border border-slate-200"
                           />
@@ -894,7 +904,7 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
                   <div className="w-full h-[620px] bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden flex flex-col items-center justify-center p-2 relative shrink-0">
                     {mockupUrl ? (
                       <img
-                        src={`${API_ORIGIN}${mockupUrl}`}
+                        src={buildPublicUrl(mockupUrl)}
                         alt="Design Mockup"
                         className="w-full h-full object-contain rounded-lg bg-white"
                       />

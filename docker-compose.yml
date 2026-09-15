@@ -16,10 +16,10 @@ services:
       - mysql_data:/var/lib/mysql
 
   flutter-runner:
-    image: flutter-runner:${IMG_TAG}
+    image: pcdpbit/flutter-runner:${IMG_TAG}
 
   backend:
-    image: mobiledev-backend:${IMG_TAG}
+    image: pcdpbit/mobiledev-backend:${IMG_TAG}
     container_name: mobiledev-backend
     restart: unless-stopped
     depends_on:
@@ -33,6 +33,8 @@ services:
       DB_NAME: mobiledev_portal
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       TZ: Asia/Kolkata
+      FLUTTER_RUNNER_IMAGE: pcdpbit/flutter-runner:${IMG_TAG}
+      PUBLIC_APP_BASE_PATH: /flutter
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRY: ${JWT_EXPIRY}
       JWT_COOKIE_MAX_AGE_MS: ${JWT_COOKIE_MAX_AGE_MS}
@@ -47,9 +49,10 @@ services:
       - "5004:5000"  # Backend: host 5003 -> container 5000
     volumes:
       - /opt/uploads/flutter:/app/uploads
+      - /var/run/docker.sock:/var/run/docker.sock
 
   frontend:
-    image: mobiledev-frontend:${IMG_TAG}
+    image: pcdpbit/mobiledev-frontend:${IMG_TAG}
     container_name: mobiledev-frontend
     restart: unless-stopped
     depends_on:

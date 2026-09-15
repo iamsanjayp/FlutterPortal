@@ -16,6 +16,18 @@ import {
 import { API_BASE_ROOT } from '../../api/apiBase.js';
 
 const API_ORIGIN = API_BASE_ROOT;
+const SITE_ORIGIN = typeof window !== 'undefined' && window.location?.origin
+  ? window.location.origin
+  : 'http://localhost:5173';
+const APP_BASE = import.meta.env.BASE_URL || '/';
+
+function buildPublicUrl(url) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  const base = APP_BASE.endsWith('/') ? APP_BASE.slice(0, -1) : APP_BASE;
+  return `${SITE_ORIGIN}${path.startsWith(`${base}/`) ? path : `${base}${path}`}`;
+}
 
 export default function AdminQuestions() {
   const [questions, setQuestions] = useState([]);
@@ -957,7 +969,7 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 mt-3">
                     <div className="text-[11px] font-bold uppercase text-gray-500 mb-2">Active Design Mockup</div>
                     <img
-                      src={`${API_ORIGIN}${formData.referenceImageUrl}`}
+                      src={buildPublicUrl(formData.referenceImageUrl)}
                       alt="Reference preview"
                       className="max-h-64 w-full object-contain rounded"
                     />
@@ -985,7 +997,7 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
                           {url.split('/').pop()}
                         </span>
                         <div className="flex items-center gap-3">
-                          <a href={`${API_ORIGIN}${url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline font-semibold">
+                          <a href={buildPublicUrl(url)} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline font-semibold">
                             View
                           </a>
                           <button

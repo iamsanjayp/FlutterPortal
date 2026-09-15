@@ -5,6 +5,18 @@ import { API_BASE_ROOT } from '../../api/apiBase.js';
 import { fetchSchedules } from '../../api/adminApi';
 
 const API_BASE = API_BASE_ROOT;
+const SITE_ORIGIN = typeof window !== 'undefined' && window.location?.origin
+  ? window.location.origin
+  : 'http://localhost:5173';
+const APP_BASE = import.meta.env.BASE_URL || '/';
+
+function buildPublicUrl(url) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  const base = APP_BASE.endsWith('/') ? APP_BASE.slice(0, -1) : APP_BASE;
+  return `${SITE_ORIGIN}${path.startsWith(`${base}/`) ? path : `${base}${path}`}`;
+}
 
 export default function AdminManualGrading() {
   const [submissions, setSubmissions] = useState([]);
@@ -188,7 +200,7 @@ export default function AdminManualGrading() {
 
     return (
       <iframe
-        src={`${API_BASE}${url}`}
+        src={buildPublicUrl(url)}
         title={title}
         className="w-full h-[620px] rounded-md border border-gray-200 bg-white"
         sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals"
@@ -449,7 +461,7 @@ export default function AdminManualGrading() {
                         <div className="flex-1 p-4 flex items-center justify-center bg-gray-100/50 overflow-auto min-h-[350px]">
                           {(selectedSubmission.referenceMockupUrl || selectedSubmission.reference_image_url) ? (
                             <img
-                              src={`${API_BASE}${selectedSubmission.referenceMockupUrl || selectedSubmission.reference_image_url}`}
+                              src={buildPublicUrl(selectedSubmission.referenceMockupUrl || selectedSubmission.reference_image_url)}
                               alt="Design Mockup"
                               className="max-h-full max-w-full object-contain rounded border border-gray-300 shadow-sm"
                             />

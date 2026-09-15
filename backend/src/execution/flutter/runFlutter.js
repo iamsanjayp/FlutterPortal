@@ -14,6 +14,11 @@ const BASE_DIR = __dirname;
 const TEMPLATE_DIR = path.join(BASE_DIR, "template");
 const TEMPLATE_UI_DIR = path.join(BASE_DIR, "template_ui");
 const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
+const FLUTTER_RUNNER_IMAGE = process.env.FLUTTER_RUNNER_IMAGE || "flutter-runner";
+
+function getPublicBasePath() {
+  return (process.env.PUBLIC_APP_BASE_PATH || "/flutter").replace(/\/$/, "");
+}
 
 // Validate a container name only has safe characters (alphanumeric, dashes)
 function validateContainerName(name) {
@@ -166,7 +171,7 @@ export async function runFlutterCode(code, { functionName, cases, requiredPackag
     try {
       const runArgs = ["run", "--name", containerName, "-d"];
       if (useHostNetwork) runArgs.push("--network", "host");
-      runArgs.push("-v", "flutter_pub_cache:/root/.pub-cache", "--entrypoint", "/bin/bash", "flutter-runner", "-c", "sleep 300");
+      runArgs.push("-v", "flutter_pub_cache:/root/.pub-cache", "--entrypoint", "/bin/bash", FLUTTER_RUNNER_IMAGE, "-c", "sleep 300");
       await dockerExec(runArgs, { timeout: 30000 });
 
       await dockerExec(
@@ -332,7 +337,7 @@ export async function runFlutterUI(code, resourceUrls = [], options = {}) {
       // Start a long-lived container (no host mounts) to avoid Windows path contamination.
       const uiRunArgs = ["run", "--name", containerName, "-d"];
       if (useHostNetworkUI) uiRunArgs.push("--network", "host");
-      uiRunArgs.push("--memory=2g", "--memory-swap=2g", "--entrypoint", "/bin/bash", "flutter-runner", "-c", "sleep 300");
+      uiRunArgs.push("--memory=2g", "--memory-swap=2g", "--entrypoint", "/bin/bash", FLUTTER_RUNNER_IMAGE, "-c", "sleep 300");
       await dockerExec(uiRunArgs, { timeout: 30000 });
 
       await dockerExec(
@@ -352,7 +357,8 @@ export async function runFlutterUI(code, resourceUrls = [], options = {}) {
         { timeout: 30000 }
       );
 
-      const baseHref = `/uploads/ui_previews/${runId}/`;
+      const publicBasePath = getPublicBasePath();
+      const baseHref = `${publicBasePath}/uploads/ui_previews/${runId}/`;
       const buildResult = await dockerExec(
         ["exec", containerName, "/bin/bash", "-lc", `rm -rf /workspace/.dart_tool /workspace/.packages /workspace/.flutter-plugins /workspace/.flutter-plugins-dependencies && cd /workspace && flutter create --platforms web --project-name ui_solution . && flutter pub get && flutter build web --release --base-href ${baseHref}`],
         { timeout: uiTimeoutMs }
@@ -410,7 +416,7 @@ export async function runFlutterUI(code, resourceUrls = [], options = {}) {
         rawOutput: output,
         executionTimeMs: duration,
         previewPath,
-        previewUrl: `/uploads/ui_previews/${runId}/index.html`,
+        previewUrl: `${getPublicBasePath()}/uploads/ui_previews/${runId}/index.html`,
       });
       try {
         fs.rmSync(workDir, { recursive: true, force: true });
@@ -461,7 +467,7 @@ export async function runFlutterCustom(code, { functionName, dartArgs, requiredP
     try {
       const customRunArgs = ["run", "--name", containerName, "-d"];
       if (useHostNetworkCustom) customRunArgs.push("--network", "host");
-      customRunArgs.push("-v", "flutter_pub_cache:/root/.pub-cache", "--entrypoint", "/bin/bash", "flutter-runner", "-c", "sleep 300");
+      customRunArgs.push("-v", "flutter_pub_cache:/root/.pub-cache", "--entrypoint", "/bin/bash", FLUTTER_RUNNER_IMAGE, "-c", "sleep 300");
       await dockerExec(customRunArgs, { timeout: 30000 });
 
       await dockerExec(

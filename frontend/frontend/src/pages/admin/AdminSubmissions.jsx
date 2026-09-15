@@ -5,6 +5,18 @@ import { fetchSchedules, fetchSubmissions, updateSubmissionStatus, deleteSubmiss
 import { API_BASE_ROOT } from '../../api/apiBase.js';
 
 const API_ORIGIN = API_BASE_ROOT;
+const SITE_ORIGIN = typeof window !== 'undefined' && window.location?.origin
+  ? window.location.origin
+  : 'http://localhost:5173';
+const APP_BASE = import.meta.env.BASE_URL || '/';
+
+function buildPublicUrl(url) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  const base = APP_BASE.endsWith('/') ? APP_BASE.slice(0, -1) : APP_BASE;
+  return `${SITE_ORIGIN}${path.startsWith(`${base}/`) ? path : `${base}${path}`}`;
+}
 
 export default function AdminSubmissions() {
   const [submissions, setSubmissions] = useState([]);
@@ -328,7 +340,7 @@ function SubmissionDetail({ submission, onClose, onUpdateSubmission, onDeleteSub
 
     return (
       <iframe
-        src={`${API_ORIGIN}${url}`}
+        src={buildPublicUrl(url)}
         title={title}
         className="w-full h-[620px] rounded-md border border-gray-200 bg-white"
         sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-modals"
@@ -455,7 +467,7 @@ function SubmissionDetail({ submission, onClose, onUpdateSubmission, onDeleteSub
                   <div>
                     <div className="text-xs uppercase text-gray-500 mb-2">Design Mockup (Reference)</div>
                     <img
-                      src={`${API_ORIGIN}${submission.referenceMockupUrl || submission.reference_image_url}`}
+                      src={buildPublicUrl(submission.referenceMockupUrl || submission.reference_image_url)}
                       alt="Design Mockup"
                       className="w-full rounded-md border border-gray-200 object-contain"
                     />

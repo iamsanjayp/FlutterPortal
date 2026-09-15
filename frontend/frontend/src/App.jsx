@@ -265,7 +265,7 @@ function RootRedirect() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/flutter">
       <AuthProvider>
         <Routes>
           <Route path="/" element={<RootRedirect />} />

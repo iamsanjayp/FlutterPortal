@@ -1,11 +1,11 @@
 
-$env:VERSION="v1.0.0"
+$env:VERSION="v1.0.7"
 
 $env:DOCKERHUB_USER="pcdpbit"
 
 # --- Frontend (mobiledev-frontend) ---
 docker build `
-  --build-arg VITE_API_BASE="https://pcdp.bitsathy.ac.in/flutter/api" `
+  --build-arg VITE_API_BASE="https://pcdp.bitsathy.ac.in/flutter" `
   -t mobiledev-frontend:$env:VERSION `
   -f .\frontend\frontend\Dockerfile .\frontend\frontend
 docker tag mobiledev-frontend:$env:VERSION $env:DOCKERHUB_USER/mobiledev-frontend:$env:VERSION

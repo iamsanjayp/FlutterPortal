@@ -5,4 +5,6 @@ const fallbackOrigin = typeof window !== "undefined" && window.location?.origin
   : "http://localhost:5173";
 
 export const API_BASE_ROOT = useEnvBase ? envBase : fallbackOrigin;
-export const API_BASE = `${API_BASE_ROOT}/api`;
+export const API_BASE = envBase && envBase.endsWith("/api")
+  ? envBase
+  : `${API_BASE_ROOT}/api`;
