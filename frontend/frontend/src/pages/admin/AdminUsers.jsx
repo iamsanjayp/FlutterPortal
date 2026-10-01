@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, UserX, User, Mail, CheckCircle, XCircle, Plus, LogOut } from 'lucide-react';
+import { Search, UserX, User, Mail, CheckCircle, XCircle, Plus, LogOut, AlertTriangle, Loader2 } from 'lucide-react';
 import { fetchStudents, updateStudentStatus, updateStudentLevel, createUser, updateUser, bulkImportUsers, forceLogoutUser } from '../../api/adminApi';
 
 export default function AdminUsers() {
@@ -13,6 +13,9 @@ export default function AdminUsers() {
   const [editData, setEditData] = useState(null);
   const [bulkFile, setBulkFile] = useState(null);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [logoutTarget, setLogoutTarget] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [toast, setToast] = useState(null);
   const [newUser, setNewUser] = useState({
     fullName: '',
     email: '',
@@ -113,20 +116,27 @@ export default function AdminUsers() {
     }
   }
 
-  async function handleForceLogout(user) {
-    if (!confirm(`Force logout ${user.full_name}?`)) {
-      return;
-    }
+  function showToast(message, type = 'success') {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  }
 
+  function handleForceLogout(user) {
+    setLogoutTarget(user);
+  }
+
+  async function confirmForceLogout() {
+    if (!logoutTarget) return;
     try {
-      setLoading(true);
-      await forceLogoutUser(user.id);
+      setActionLoading(true);
+      await forceLogoutUser(logoutTarget.id);
       await loadUsers(searchTerm);
-      alert('User logged out from all active sessions');
+      showToast(`${logoutTarget.full_name || 'User'} has been logged out from all active sessions`, 'success');
+      setLogoutTarget(null);
     } catch (err) {
-      alert('Failed to force logout user: ' + err.message);
+      showToast('Failed to force logout user: ' + (err.message || err), 'error');
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   }
 
@@ -494,13 +504,23 @@ export default function AdminUsers() {
                   </select>
                 </td>
                 <td className="px-6 py-4">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    user.is_active
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-red-100 text-red-700'
-                  }`}>
-                    {user.is_active ? 'Active' : 'Blocked'}
-                  </span>
+                  <div className="flex flex-col gap-1 items-start">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      user.is_active
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-red-100 text-red-700'
+                    }`}>
+                      {user.is_active ? 'Active' : 'Blocked'}
+                    </span>
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                      user.is_logged_in || user.active_session_id
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {(user.is_logged_in || user.active_session_id) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>}
+                      {(user.is_logged_in || user.active_session_id) ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex items-center justify-end gap-2">
@@ -636,6 +656,73 @@ export default function AdminUsers() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Force Logout Confirmation Modal */}
+      {logoutTarget && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center shrink-0 text-amber-600">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-slate-900">Force Logout User</h3>
+                <p className="text-sm text-slate-600 mt-2">
+                  Are you sure you want to force logout <span className="font-semibold text-slate-800">{logoutTarget.full_name || logoutTarget.email}</span>?
+                </p>
+                <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2.5 mt-3 border border-amber-200">
+                  This will immediately terminate any active authentication session and close in-progress test sessions.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => setLogoutTarget(null)}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={confirmForceLogout}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {actionLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Logging out...
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4" />
+                    Confirm Force Logout
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-sm font-medium border animate-in slide-in-from-bottom-5 ${
+          toast.type === 'error'
+            ? 'bg-rose-50 text-rose-800 border-rose-200'
+            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+        }`}>
+          {toast.type === 'error' ? (
+            <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
+          ) : (
+            <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
+          )}
+          <span>{toast.message}</span>
         </div>
       )}
     </div>

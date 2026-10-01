@@ -16,10 +16,16 @@ services:
       - mysql_data:/var/lib/mysql
 
   flutter-runner:
-    image: pcdpbit/flutter-runner:${IMG_TAG}
+    build:
+      context: ./backend
+      dockerfile: flutter_runner/Dockerfile
+    image: pcdpbit/flutter-runner:${IMG_TAG:-latest}
 
   backend:
-    image: pcdpbit/mobiledev-backend:${IMG_TAG}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: pcdpbit/mobiledev-backend:${IMG_TAG:-latest}
     container_name: mobiledev-backend
     restart: unless-stopped
     depends_on:
@@ -27,24 +33,24 @@ services:
       - flutter-runner
     environment:
       PORT: 5000
-      DB_HOST: ${MYSQL_HOST}
+      DB_HOST: ${MYSQL_HOST:-mysql}
       DB_USER: ${MYSQL_USER}
       DB_PASSWORD: ${MYSQL_PASSWORD}
       DB_NAME: mobiledev_portal
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       TZ: Asia/Kolkata
-      FLUTTER_RUNNER_IMAGE: pcdpbit/flutter-runner:${IMG_TAG}
-      PUBLIC_APP_BASE_PATH: /flutter
+      FLUTTER_RUNNER_IMAGE: pcdpbit/flutter-runner:${IMG_TAG:-latest}
+      PUBLIC_APP_BASE_PATH: ${PUBLIC_APP_BASE_PATH:-/flutter}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRY: ${JWT_EXPIRY}
       JWT_COOKIE_MAX_AGE_MS: ${JWT_COOKIE_MAX_AGE_MS}
       NODE_ENV: production
-      FRONTEND_URL: "https://pcdp.bitsathy.ac.in/flutter"
-      FRONTEND_URLS: "https://pcdp.bitsathy.ac.in/flutter"
+      FRONTEND_URL: ${FRONTEND_URL:-https://pcdp.bitsathy.ac.in/flutter}
+      FRONTEND_URLS: ${FRONTEND_URLS:-https://pcdp.bitsathy.ac.in/flutter,https://pcdp.bitsathy.ac.in,http://localhost:8084,http://localhost:5173,http://localhost}
       RESET_SESSION_SECRET: ${RESET_SESSION_SECRET}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-https://pcdp.bitsathy.ac.in/flutter/auth/google/callback}
     ports:
       - "5004:5000"  # Backend: host 5003 -> container 5000
     volumes:
@@ -52,7 +58,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
   frontend:
-    image: pcdpbit/mobiledev-frontend:${IMG_TAG}
+    build:
+      context: ./frontend/frontend
+      dockerfile: Dockerfile
+    image: pcdpbit/mobiledev-frontend:${IMG_TAG:-latest}
     container_name: mobiledev-frontend
     restart: unless-stopped
     depends_on:

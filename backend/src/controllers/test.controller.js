@@ -200,6 +200,40 @@ export async function getTestData(req, res) {
     [sessionId]
   );
 
+  // Fetch existing submissions for this session to restore submitted code across reloads
+  const [existingSubmissions] = await pool.query(
+    `
+    SELECT problem_id, code, status
+    FROM test_session_submissions
+    WHERE test_session_id = ?
+    ORDER BY id ASC
+    `,
+    [sessionId]
+  );
+
+  const submittedCodeByProblem = {};
+  const submissionStatusByProblem = {};
+  for (const sub of existingSubmissions) {
+    submittedCodeByProblem[sub.problem_id] = sub.code;
+    submissionStatusByProblem[sub.problem_id] = sub.status;
+  }
+
+  // Fetch existing test case results to restore test case pass/fail statuses
+  const [caseResults] = await pool.query(
+    `
+    SELECT problem_id, test_case_id, status
+    FROM test_case_results
+    WHERE test_session_id = ?
+    ORDER BY id ASC
+    `,
+    [sessionId]
+  );
+
+  const caseStatusMap = {};
+  for (const cr of caseResults) {
+    caseStatusMap[`${cr.problem_id}_${cr.test_case_id}`] = cr.status;
+  }
+
   for (const q of questions) {
     const isTestCase = assessmentType === "TEST_CASE";
     q.uiRequiredWidgets = isTestCase ? [] : parseJsonArray(q.ui_required_widgets);
@@ -218,6 +252,10 @@ export async function getTestData(req, res) {
     q.customTestCode = q.custom_test_code || null;
     delete q.custom_test_code;
 
+    // Attach latest submitted code and status from database
+    q.submittedCode = submittedCodeByProblem[q.id] || null;
+    q.submissionStatus = submissionStatusByProblem[q.id] || null;
+
     if (assessmentType === "TEST_CASE") {
       const [cases] = await pool.query(
         `
@@ -235,7 +273,7 @@ export async function getTestData(req, res) {
         expectedOutput: tc.is_hidden ? null : tc.expected_output,
         isHidden: tc.is_hidden,
         order: tc.order_no,
-        status: "NOT_TESTED",
+        status: caseStatusMap[`${q.id}_${tc.id}`] || "NOT_TESTED",
       }));
     } else {
       const [[problemRow]] = await pool.query(
@@ -254,6 +292,8 @@ export async function getTestData(req, res) {
 
   res.json({
     questions,
+    submittedCode: submittedCodeByProblem,
+    submissionStatuses: submissionStatusByProblem,
     assessmentType,
     session: {
       durationMinutes: session?.duration_minutes || null,
@@ -468,7 +508,7 @@ export async function finishTest(req, res) {
 export async function submitFeedback(req, res) {
   try {
     const userId = req.user.id;
-    const { sessionId, feedback } = req.body;
+    const { sessionId, feedback, rating = 5, category = "GENERAL" } = req.body;
 
     if (!sessionId || typeof feedback !== "string") {
       return res.status(400).json({ error: "Missing feedback" });
@@ -487,6 +527,7 @@ export async function submitFeedback(req, res) {
       return res.status(404).json({ error: "Session not found" });
     }
 
+    // Update test_sessions table for backward compatibility
     await pool.query(
       `
       UPDATE test_sessions
@@ -494,6 +535,16 @@ export async function submitFeedback(req, res) {
       WHERE id = ?
       `,
       [feedback, sessionId]
+    );
+
+    // Save structured feedback in test_feedbacks table
+    const numRating = Math.min(Math.max(Number(rating) || 5, 1), 5);
+    await pool.query(
+      `
+      INSERT INTO test_feedbacks (test_session_id, user_id, rating, category, feedback, created_at)
+      VALUES (?, ?, ?, ?, ?, NOW())
+      `,
+      [sessionId, userId, numRating, String(category || "GENERAL"), feedback]
     );
 
     res.json({ message: "Feedback saved" });

@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
-import { Plus, Edit } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Edit, Search, Trash2, X, Check } from 'lucide-react';
 import {
   fetchProblems,
   createProblem,
   updateProblem,
   fetchTestCases,
   createTestCase,
+  updateTestCase,
+  deleteTestCase,
   deleteProblem,
   fetchLevels,
   uploadProblemReferenceImage,
@@ -37,6 +39,11 @@ export default function AdminQuestions() {
   const [levels, setLevels] = useState([]);
   const [bulkFile, setBulkFile] = useState(null);
   const [bulkLoading, setBulkLoading] = useState(false);
+
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [levelFilter, setLevelFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
 
   useEffect(() => {
     loadQuestions();
@@ -107,32 +114,66 @@ export default function AdminQuestions() {
     }
   }
 
+  const filteredQuestions = useMemo(() => {
+    return questions.filter(q => {
+      // Level filter
+      if (levelFilter !== "ALL" && String(q.level) !== String(levelFilter)) {
+        return false;
+      }
+      // Status filter
+      if (statusFilter === "ACTIVE" && !q.is_active) return false;
+      if (statusFilter === "INACTIVE" && q.is_active) return false;
+
+      // Text search
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        const titleMatch = (q.title || "").toLowerCase().includes(query);
+        const descMatch = (q.description || "").toLowerCase().includes(query);
+        const idMatch = String(q.id).includes(query);
+        if (!titleMatch && !descMatch && !idMatch) return false;
+      }
+
+      return true;
+    });
+  }, [questions, searchQuery, levelFilter, statusFilter]);
+
+  const hasActiveFilters = searchQuery.trim() !== "" || levelFilter !== "ALL" || statusFilter !== "ALL";
+
+  function clearFilters() {
+    setSearchQuery("");
+    setLevelFilter("ALL");
+    setStatusFilter("ALL");
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Question Bank</h1>
-        <div className="flex items-center gap-3">
-          <label className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 cursor-pointer">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Question Bank</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Manage problems, starter templates, and test assertions</p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 cursor-pointer hover:bg-gray-50 bg-white shadow-xs">
             <input
               type="file"
               accept=".xlsx,.xls"
               className="hidden"
               onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
             />
-            Bulk Import
+            {bulkFile ? bulkFile.name.slice(0, 15) : "Bulk Import"}
           </label>
           <button
             onClick={handleBulkImport}
-            disabled={bulkLoading}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+            disabled={bulkLoading || !bulkFile}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 text-sm font-medium shadow-xs"
           >
             {bulkLoading ? 'Importing...' : 'Upload'}
           </button>
           <button
             onClick={handleCreate}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm font-medium"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4" />
             New Question
           </button>
         </div>
@@ -142,19 +183,93 @@ export default function AdminQuestions() {
         <QuestionEditor
           question={selectedQuestion}
           levels={levels}
-          onSave={(saved) => {
+          onSave={() => {
             setShowEditor(false);
             loadQuestions();
           }}
           onCancel={() => setShowEditor(false)}
         />
       ) : (
-        <QuestionsTable
-          questions={questions}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          loading={loading}
-        />
+        <div className="space-y-4">
+          {/* Search & Filter Bar */}
+          <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search questions by title, ID, or description..."
+                className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Filter Dropdowns */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-gray-500">Level:</span>
+                <select
+                  value={levelFilter}
+                  onChange={(e) => setLevelFilter(e.target.value)}
+                  className="px-2.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="ALL">All Levels</option>
+                  {levels.map((lvl) => (
+                    <option key={lvl.id || lvl.level_code} value={lvl.level_code}>
+                      Level {lvl.level_code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-gray-500">Status:</span>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-2.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="ALL">All Status</option>
+                  <option value="ACTIVE">Active Only</option>
+                  <option value="INACTIVE">Inactive Only</option>
+                </select>
+              </div>
+
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2 py-1 hover:bg-blue-50 rounded transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Result Count Indicator */}
+          <div className="flex items-center justify-between text-xs text-gray-500 px-1">
+            <span>
+              Showing <strong className="text-gray-800">{filteredQuestions.length}</strong> of <strong className="text-gray-800">{questions.length}</strong> questions
+            </span>
+          </div>
+
+          <QuestionsTable
+            questions={filteredQuestions}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            loading={loading}
+          />
+        </div>
       )}
     </div>
   );
@@ -367,6 +482,27 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
       loadTestCases();
     } catch (err) {
       alert('Failed to add test case: ' + err.message);
+    }
+  }
+
+  async function handleUpdateTestCase(id, payload) {
+    try {
+      await updateTestCase(id, payload);
+      await loadTestCases();
+    } catch (err) {
+      alert('Failed to update test case: ' + err.message);
+    }
+  }
+
+  async function handleDeleteTestCase(id, index) {
+    if (!window.confirm(`Delete test case #${index}?`)) return;
+    try {
+      setTestCases(prev => prev.filter(tc => tc.id !== id));
+      await deleteTestCase(id);
+      await loadTestCases();
+    } catch (err) {
+      alert('Failed to delete test case: ' + (err.message || err));
+      await loadTestCases();
     }
   }
 
@@ -867,7 +1003,13 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
                     </div>
                     <div className="space-y-2">
                       {sampleTestCases.map((tc, idx) => (
-                        <TestCaseCard key={tc.id} testCase={tc} index={idx + 1} />
+                        <TestCaseCard
+                          key={tc.id}
+                          testCase={tc}
+                          index={idx + 1}
+                          onUpdate={handleUpdateTestCase}
+                          onDelete={handleDeleteTestCase}
+                        />
                       ))}
                       {sampleTestCases.length === 0 && (
                         <p className="text-xs text-gray-500 py-4 text-center bg-gray-50 rounded-lg">No sample test cases yet</p>
@@ -882,7 +1024,14 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
                     </div>
                     <div className="space-y-2">
                       {hiddenTestCases.map((tc, idx) => (
-                        <TestCaseCard key={tc.id} testCase={tc} index={idx + 1} isHidden />
+                        <TestCaseCard
+                          key={tc.id}
+                          testCase={tc}
+                          index={idx + 1}
+                          isHidden
+                          onUpdate={handleUpdateTestCase}
+                          onDelete={handleDeleteTestCase}
+                        />
                       ))}
                       {hiddenTestCases.length === 0 && (
                         <p className="text-xs text-gray-500 py-4 text-center bg-gray-50 rounded-lg">No hidden test cases yet</p>
@@ -1020,29 +1169,134 @@ function QuestionEditor({ question, levels, onSave, onCancel }) {
   );
 }
 
-function TestCaseCard({ testCase, index, isHidden }) {
+function TestCaseCard({ testCase, index, isHidden, onUpdate, onDelete }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    input: testCase.input ?? '',
+    expectedOutput: testCase.expected_output ?? '',
+    isHidden: Boolean(testCase.is_hidden),
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setEditForm({
+      input: testCase.input ?? '',
+      expectedOutput: testCase.expected_output ?? '',
+      isHidden: Boolean(testCase.is_hidden),
+    });
+  }, [testCase]);
+
+  async function handleSaveEdit() {
+    try {
+      setSaving(true);
+      await onUpdate(testCase.id, editForm);
+      setIsEditing(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-xs font-bold text-gray-700">Test Case #{index}</span>
-            {isHidden && (
-              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-full">Hidden</span>
-            )}
+    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 transition-all">
+      {isEditing ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-blue-700">Editing Test Case #{index}</span>
+            <span className="text-[10px] text-gray-400">ID: {testCase.id}</span>
           </div>
-          <div className="grid grid-cols-2 gap-2 font-mono text-xs">
-            <div className="bg-white p-1.5 rounded border border-gray-200">
-              <span className="text-gray-400 font-sans block text-[10px]">Input:</span>
-              <span className="text-gray-800">{testCase.input || 'null'}</span>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Input Arguments</label>
+              <input
+                type="text"
+                value={editForm.input}
+                onChange={(e) => setEditForm({ ...editForm, input: e.target.value })}
+                className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-xs font-mono bg-white focus:outline-none focus:border-blue-500"
+                placeholder="e.g. 5, 10"
+              />
             </div>
-            <div className="bg-white p-1.5 rounded border border-gray-200">
-              <span className="text-gray-400 font-sans block text-[10px]">Expected Output:</span>
-              <span className="text-gray-800">{testCase.expected_output || 'null'}</span>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Expected Output</label>
+              <input
+                type="text"
+                value={editForm.expectedOutput}
+                onChange={(e) => setEditForm({ ...editForm, expectedOutput: e.target.value })}
+                className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-xs font-mono bg-white focus:outline-none focus:border-blue-500"
+                placeholder="e.g. 15"
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-1">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editForm.isHidden}
+                onChange={(e) => setEditForm({ ...editForm, isHidden: e.target.checked })}
+                className="w-3.5 h-3.5 text-blue-600 rounded"
+              />
+              <span className="text-xs text-gray-700 font-medium">Hidden test case</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={saving}
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded shadow-xs disabled:opacity-50 transition-colors"
+              >
+                {saving ? "Saving..." : "Save"}
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs font-bold text-gray-700">Test Case #{index}</span>
+              {isHidden && (
+                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-full">Hidden</span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2 font-mono text-xs">
+              <div className="bg-white p-1.5 rounded border border-gray-200">
+                <span className="text-gray-400 font-sans block text-[10px]">Input:</span>
+                <span className="text-gray-800 break-all">{testCase.input || 'null'}</span>
+              </div>
+              <div className="bg-white p-1.5 rounded border border-gray-200">
+                <span className="text-gray-400 font-sans block text-[10px]">Expected Output:</span>
+                <span className="text-gray-800 break-all">{testCase.expected_output || 'null'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 ml-3">
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="p-1.5 text-blue-600 hover:bg-blue-100/60 rounded transition-colors"
+              title="Edit test case"
+            >
+              <Edit className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(testCase.id, index)}
+              className="p-1.5 text-red-600 hover:bg-red-100/60 rounded transition-colors"
+              title="Delete test case"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

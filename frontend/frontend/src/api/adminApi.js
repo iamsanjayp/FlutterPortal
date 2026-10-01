@@ -415,3 +415,15 @@ export function deleteTestCase(id) {
     method: "DELETE",
   });
 }
+
+export function fetchFeedbacks(params = {}) {
+  const cleanParams = {};
+  Object.entries(params).forEach(([key, val]) => {
+    if (val !== undefined && val !== null && val !== "" && val !== "all" && val !== "ALL" && val !== "undefined") {
+      cleanParams[key] = val;
+    }
+  });
+  const query = new URLSearchParams(cleanParams).toString();
+  return request(`${API_BASE}/api/admin/feedbacks${query ? `?${query}` : ""}`);
+}
+

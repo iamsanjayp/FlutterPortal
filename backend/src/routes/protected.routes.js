@@ -21,13 +21,33 @@ router.get("/me", authenticate, async (req, res) => {
   const level = await getCurrentLevel(req.user.id);
   const { durationMinutes, questionCount, assessmentType } = await getLevelConfig(level);
 
+  // Check for active IN_PROGRESS test session
+  const [[activeSession]] = await pool.query(
+    `
+    SELECT id, level, duration_minutes, started_at
+    FROM test_sessions
+    WHERE user_id = ? AND status = 'IN_PROGRESS'
+    ORDER BY id DESC
+    LIMIT 1
+    `,
+    [req.user.id]
+  );
+
   res.json({
     message: "Authenticated",
     user,
-    level,
-    durationMinutes,
+    level: activeSession?.level || level,
+    durationMinutes: activeSession?.duration_minutes || durationMinutes,
     questionCount,
     assessmentType,
+    activeSession: activeSession
+      ? {
+          id: activeSession.id,
+          level: activeSession.level,
+          durationMinutes: activeSession.duration_minutes,
+          startedAt: activeSession.started_at,
+        }
+      : null,
   });
 });
 

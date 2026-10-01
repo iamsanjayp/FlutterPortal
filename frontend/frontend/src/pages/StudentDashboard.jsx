@@ -121,7 +121,7 @@ export default function StudentDashboard({ user, level, durationMinutes, questio
           </div>
         )}
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <section className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
           <StatCard title="Attempts" value={stats.totalAttempts ?? 0} icon={Activity} tone="blue" />
           <StatCard title="Passes" value={stats.passCount ?? 0} icon={Trophy} tone="emerald" />
           <StatCard title="Fails" value={stats.failCount ?? 0} icon={Flame} tone="rose" />
@@ -280,16 +280,16 @@ function StatCard({ title, value, suffix = "", icon: Icon, tone }) {
   };
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-100">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">{title}</div>
-          <div className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+    <div className="rounded-2xl sm:rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[10px] sm:text-xs font-medium uppercase tracking-[0.14em] text-slate-500 truncate">{title}</div>
+          <div className="mt-1.5 sm:mt-2 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
             {value}{suffix}
           </div>
         </div>
-        <div className={`rounded-2xl p-3 ${tones[tone] || tones.slate}`}>
-          <Icon className="h-5 w-5" />
+        <div className={`rounded-xl sm:rounded-2xl p-2 sm:p-3 shrink-0 ${tones[tone] || tones.slate}`}>
+          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
         </div>
       </div>
     </div>

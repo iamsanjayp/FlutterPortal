@@ -6,6 +6,7 @@ $env:DOCKERHUB_USER="pcdpbit"
 # --- Frontend (mobiledev-frontend) ---
 docker build `
   --build-arg VITE_API_BASE="https://pcdp.bitsathy.ac.in/flutter" `
+  --build-arg VITE_BASE_PATH="/flutter/" `
   -t mobiledev-frontend:$env:VERSION `
   -f .\frontend\frontend\Dockerfile .\frontend\frontend
 docker tag mobiledev-frontend:$env:VERSION $env:DOCKERHUB_USER/mobiledev-frontend:$env:VERSION

@@ -292,7 +292,7 @@ export async function updateSchedule(req, res) {
 }
 
 export async function resetQuestions(req, res) {
-  const { sessionIds, userIds } = req.body;
+  const { sessionIds, userIds, problemId } = req.body;
   const targetSessionIds = new Set(
     Array.isArray(sessionIds) ? sessionIds.map(Number).filter(Boolean) : []
   );
@@ -330,6 +330,71 @@ export async function resetQuestions(req, res) {
         continue;
       }
 
+      // SELECTIVE REPLACEMENT: If problemId is provided, replace ONLY that single question
+      if (problemId) {
+        const targetProblemId = Number(problemId);
+        const [currentRows] = await conn.query(
+          "SELECT problem_id, order_no FROM test_session_questions WHERE test_session_id = ?",
+          [sessionId]
+        );
+        const targetQuestion = currentRows.find(r => Number(r.problem_id) === targetProblemId);
+        if (!targetQuestion) {
+          await conn.rollback();
+          continue;
+        }
+
+        const currentIds = currentRows.map(r => r.problem_id).filter(Boolean);
+        const [fresh] = await conn.query(
+          `
+          SELECT id FROM problems
+          WHERE level = ? AND is_active = true AND id NOT IN (?)
+          ORDER BY RAND()
+          LIMIT 1
+          `,
+          [session.level, currentIds]
+        );
+
+        let newProblemId = fresh[0]?.id;
+        if (!newProblemId) {
+          const [fallback] = await conn.query(
+            `
+            SELECT id FROM problems
+            WHERE level = ? AND is_active = true AND id != ?
+            ORDER BY RAND()
+            LIMIT 1
+            `,
+            [session.level, targetProblemId]
+          );
+          newProblemId = fallback[0]?.id;
+        }
+
+        if (!newProblemId) {
+          await conn.rollback();
+          throw new Error("No alternative problem available for this level");
+        }
+
+        // Delete test cases and submissions ONLY for the replaced problem
+        await conn.query(
+          "DELETE FROM test_case_results WHERE test_session_id = ? AND problem_id = ?",
+          [sessionId, targetProblemId]
+        );
+        await conn.query(
+          "DELETE FROM test_session_submissions WHERE test_session_id = ? AND problem_id = ?",
+          [sessionId, targetProblemId]
+        );
+
+        // Update the question entry preserving order_no
+        await conn.query(
+          "UPDATE test_session_questions SET problem_id = ? WHERE test_session_id = ? AND problem_id = ?",
+          [newProblemId, sessionId, targetProblemId]
+        );
+
+        await conn.commit();
+        updated.push(sessionId);
+        continue;
+      }
+
+      // FULL REPLACEMENT: If no problemId is passed, replace all questions
       const { questionCount } = await getLevelConfig(session.level);
       const [currentRows] = await conn.query(
         "SELECT problem_id FROM test_session_questions WHERE test_session_id = ?",
@@ -403,7 +468,7 @@ export async function resetQuestions(req, res) {
       updated.push(sessionId);
     }
 
-    res.json({ message: "Questions reset", sessions: updated });
+    res.json({ message: problemId ? "Question replaced successfully" : "Questions reset", sessions: updated });
   } catch (err) {
     await conn.rollback();
     console.error("Reset questions error:", err);
@@ -567,16 +632,12 @@ export async function resetUserLogin(req, res) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    if (!user.active_session_id) {
-      return res.status(404).json({ error: "No active session found" });
-    }
-
     await pool.query(
       "UPDATE users SET active_session_id = NULL WHERE id = ?",
       [id]
     );
 
-    res.json({ message: "Login reset" });
+    res.json({ message: "Login reset successfully" });
   } catch (err) {
     console.error("Reset user login error:", err);
     res.status(500).json({ error: "Failed to reset login" });
@@ -595,16 +656,23 @@ export async function forceLogoutUser(req, res) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    if (!user.active_session_id) {
-      return res.status(404).json({ error: "No active session found" });
-    }
-
+    // Clear active session
     await pool.query(
       "UPDATE users SET active_session_id = NULL WHERE id = ?",
       [id]
     );
 
-    res.json({ message: "User logged out" });
+    // Also terminate any active in-progress test sessions for this user
+    await pool.query(
+      `
+      UPDATE test_sessions
+      SET status = 'FAIL', ended_at = COALESCE(ended_at, NOW()), level_cleared = 0
+      WHERE user_id = ? AND status = 'IN_PROGRESS'
+      `,
+      [id]
+    );
+
+    res.json({ message: "User logged out successfully" });
   } catch (err) {
     console.error("Force logout user error:", err);
     res.status(500).json({ error: "Failed to force logout" });
@@ -956,7 +1024,8 @@ export async function getStudents(req, res) {
     const [rows] = await pool.query(
       `
       SELECT u.id, u.full_name, u.email, u.enrollment_no, u.roll_no, u.staff_id,
-             u.is_active, sl.current_level, u.role_id, r.name AS role_name
+             u.is_active, sl.current_level, u.role_id, r.name AS role_name,
+             u.active_session_id, (u.active_session_id IS NOT NULL) AS is_logged_in
       FROM users u
       JOIN roles r ON r.id = u.role_id
       LEFT JOIN student_levels sl ON sl.user_id = u.id
@@ -2025,6 +2094,8 @@ export async function updateTestCase(req, res) {
 export async function deleteTestCase(req, res) {
   try {
     const { id } = req.params;
+    // Explicitly delete referencing test_case_results first to prevent foreign key errors
+    await pool.query("DELETE FROM test_case_results WHERE test_case_id = ?", [id]);
     const [result] = await pool.query(
       "DELETE FROM test_cases WHERE id = ?",
       [id]
@@ -2037,7 +2108,7 @@ export async function deleteTestCase(req, res) {
     res.json({ message: "Test case removed" });
   } catch (err) {
     console.error("Delete test case error:", err);
-    res.status(500).json({ error: "Failed to delete test case" });
+    res.status(500).json({ error: "Failed to delete test case: " + (err.message || err) });
   }
 }
 
@@ -2168,5 +2239,86 @@ export async function submitManualGrade(req, res) {
   } catch (err) {
     console.error("Submit manual grade error:", err);
     res.status(500).json({ error: "Failed to submit manual grade" });
+  }
+}
+
+export async function getFeedbacks(req, res) {
+  try {
+    const { rating, level, category, search, limit = 50, page = 1 } = req.query;
+
+    let query = `
+      SELECT 
+        tf.id,
+        tf.test_session_id,
+        tf.user_id,
+        tf.rating,
+        tf.category,
+        tf.feedback,
+        tf.created_at,
+        COALESCE(u.full_name, 'Unknown Student') AS full_name,
+        u.email,
+        u.roll_no,
+        ts.level,
+        ts.status AS session_status,
+        ts.started_at,
+        ts.ended_at
+      FROM test_feedbacks tf
+      LEFT JOIN users u ON u.id = tf.user_id
+      LEFT JOIN test_sessions ts ON ts.id = tf.test_session_id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    const numRating = Number(rating);
+    if (rating && rating !== "ALL" && rating !== "all" && rating !== "undefined" && !isNaN(numRating)) {
+      query += " AND tf.rating = ?";
+      params.push(numRating);
+    }
+
+    if (level && level !== "ALL" && level !== "all" && level !== "undefined") {
+      query += " AND ts.level = ?";
+      params.push(level);
+    }
+
+    if (category && category !== "ALL" && category !== "all" && category !== "undefined") {
+      query += " AND tf.category = ?";
+      params.push(category);
+    }
+
+    if (search && search.trim() && search.trim() !== "undefined") {
+      query += " AND (u.full_name LIKE ? OR u.email LIKE ? OR u.roll_no LIKE ? OR tf.feedback LIKE ?)";
+      const term = `%${search.trim()}%`;
+      params.push(term, term, term, term);
+    }
+
+    query += " ORDER BY tf.created_at DESC LIMIT ? OFFSET ?";
+    const limitNum = Math.min(Math.max(Number(limit) || 50, 1), 500);
+    const offsetNum = (Math.max(Number(page) || 1, 1) - 1) * limitNum;
+    params.push(limitNum, offsetNum);
+
+    const [rows] = await pool.query(query, params);
+
+    // Summary stats
+    const [[stats]] = await pool.query(`
+      SELECT 
+        COUNT(*) AS total_feedbacks,
+        COALESCE(AVG(rating), 5) AS avg_rating,
+        COUNT(CASE WHEN rating >= 4 THEN 1 END) AS positive_count,
+        COUNT(CASE WHEN rating <= 2 THEN 1 END) AS needs_attention_count
+      FROM test_feedbacks
+    `);
+
+    res.json({
+      feedbacks: rows,
+      stats: {
+        totalFeedbacks: stats?.total_feedbacks || 0,
+        avgRating: Number(stats?.avg_rating || 5).toFixed(1),
+        positiveCount: stats?.positive_count || 0,
+        needsAttentionCount: stats?.needs_attention_count || 0,
+      }
+    });
+  } catch (err) {
+    console.error("Get feedbacks error:", err);
+    res.status(500).json({ error: "Failed to fetch feedbacks: " + (err.message || err) });
   }
 }

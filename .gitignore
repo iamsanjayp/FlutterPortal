@@ -31,3 +31,5 @@ backend/uploads/ui_resources/*
 backend/uploads/ui_samples/*
 !backend/uploads/ui_samples/.gitkeep
 *.log
+mobiledev_portal_clean_dump_updated.sql
+*.sql.gz

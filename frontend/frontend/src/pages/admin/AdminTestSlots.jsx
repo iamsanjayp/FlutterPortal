@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit, Calendar, Clock, Users, Search, Upload, Trash2, X } from 'lucide-react';
 import { 
   fetchSchedules, 
@@ -26,6 +26,10 @@ export default function AdminTestSlots() {
   const [studentSearchLoading, setStudentSearchLoading] = useState(false);
   const [registrationFile, setRegistrationFile] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
+
+  // Test Slot Search & Filter State
+  const [slotSearchQuery, setSlotSearchQuery] = useState('');
+  const [slotStatusFilter, setSlotStatusFilter] = useState('ALL');
 
   useEffect(() => {
     loadSlots();
@@ -191,15 +195,49 @@ export default function AdminTestSlots() {
     }
   }
 
+  const filteredSlots = useMemo(() => {
+    const now = new Date();
+    return slots.filter((slot) => {
+      const startTime = new Date(slot.start_at);
+      const endTime = new Date(slot.end_at);
+      const isLive = slot.is_active && now >= startTime && now <= endTime;
+      const isUpcoming = now < startTime;
+      const isCompleted = now > endTime;
+
+      if (slotStatusFilter === 'LIVE' && !isLive) return false;
+      if (slotStatusFilter === 'UPCOMING' && !isUpcoming) return false;
+      if (slotStatusFilter === 'COMPLETED' && !isCompleted) return false;
+
+      if (slotSearchQuery.trim()) {
+        const query = slotSearchQuery.toLowerCase().trim();
+        const nameMatch = (slot.name || '').toLowerCase().includes(query);
+        const idMatch = String(slot.id).includes(query);
+        const teacherMatch = (slot.live_teacher_name || '').toLowerCase().includes(query);
+        const codeReviewerMatch = (slot.code_reviewer_name || '').toLowerCase().includes(query);
+        const uiReviewerMatch = (slot.ui_reviewer_name || '').toLowerCase().includes(query);
+        if (!nameMatch && !idMatch && !teacherMatch && !codeReviewerMatch && !uiReviewerMatch) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [slots, slotSearchQuery, slotStatusFilter]);
+
+  const hasActiveFilters = slotSearchQuery.trim() !== '' || slotStatusFilter !== 'ALL';
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800">Test Slots</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Test Slots</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Schedule assessment windows, assign teachers, and enroll students</p>
+        </div>
         <button
           onClick={handleCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm"
+          className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors shadow-sm text-sm font-medium shrink-0"
         >
-          <Plus className="w-5 h-5" />
+          <Plus className="w-4 h-4" />
           Add Slot
         </button>
       </div>
@@ -212,13 +250,73 @@ export default function AdminTestSlots() {
         />
       )}
 
-        <SlotsTable 
-          slots={slots}
-          onEdit={handleEdit}
-          onToggleActive={handleToggleActive}
-          onManageRegistrations={handleManageRegistrations}
-          loading={loading}
-        />
+      {/* Search and Filters */}
+      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* Search Input */}
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={slotSearchQuery}
+            onChange={(e) => setSlotSearchQuery(e.target.value)}
+            placeholder="Search slots by name, ID, teacher, or reviewer..."
+            className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+          />
+          {slotSearchQuery && (
+            <button
+              onClick={() => setSlotSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Status Filter */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-gray-500">Status:</span>
+            <select
+              value={slotStatusFilter}
+              onChange={(e) => setSlotStatusFilter(e.target.value)}
+              className="px-2.5 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none focus:border-purple-500"
+            >
+              <option value="ALL">All Slots</option>
+              <option value="LIVE">Live Now</option>
+              <option value="UPCOMING">Upcoming</option>
+              <option value="COMPLETED">Completed</option>
+            </select>
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              onClick={() => {
+                setSlotSearchQuery('');
+                setSlotStatusFilter('ALL');
+              }}
+              className="text-xs text-purple-600 hover:text-purple-800 font-semibold px-2 py-1 hover:bg-purple-50 rounded transition-colors"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Results Count */}
+      <div className="flex items-center justify-between text-xs text-gray-500 px-1">
+        <span>
+          Showing <strong className="text-gray-800">{filteredSlots.length}</strong> of <strong className="text-gray-800">{slots.length}</strong> test slots
+        </span>
+      </div>
+
+      <SlotsTable 
+        slots={filteredSlots}
+        onEdit={handleEdit}
+        onToggleActive={handleToggleActive}
+        onManageRegistrations={handleManageRegistrations}
+        loading={loading}
+      />
 
       {selectedSlot && (
         <SlotRegistrationPanel
@@ -369,8 +467,8 @@ function SlotsTable({ slots, onEdit, onToggleActive, onManageRegistrations, load
       </table>
       {slots.length === 0 && (
         <div className="p-8 text-center">
-          <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500">No test slots scheduled. Create your first slot!</p>
+          <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm font-medium text-gray-500">No test slots found matching the criteria.</p>
         </div>
       )}
     </div>

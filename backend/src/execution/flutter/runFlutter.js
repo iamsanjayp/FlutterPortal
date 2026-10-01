@@ -17,7 +17,7 @@ const UPLOADS_DIR = path.resolve(process.cwd(), "uploads");
 const FLUTTER_RUNNER_IMAGE = process.env.FLUTTER_RUNNER_IMAGE || "flutter-runner";
 
 function getPublicBasePath() {
-  return (process.env.PUBLIC_APP_BASE_PATH || "/flutter").replace(/\/$/, "");
+  return (process.env.PUBLIC_APP_BASE_PATH ?? "/flutter").replace(/\/$/, "");
 }
 
 // Validate a container name only has safe characters (alphanumeric, dashes)

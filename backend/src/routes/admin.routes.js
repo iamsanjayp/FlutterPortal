@@ -48,6 +48,7 @@ import {
 	updateUser,
 	bulkCreateUsers,
 	bulkCreateProblems,
+	getFeedbacks,
 } from "../controllers/admin.controller.js";
 
 const router = express.Router();
@@ -81,8 +82,9 @@ router.post("/schedules/:id/registrations", authorizeRoles(2, 3), addScheduleReg
 router.post("/schedules/:id/registrations/bulk", authorizeRoles(2, 3), fileUpload.single("file"), bulkImportScheduleRegistrations);
 router.delete("/schedules/:id/registrations/:userId", authorizeRoles(2, 3), removeScheduleRegistration);
 
-router.post("/sessions/reset-questions", authorizeRoles(3), resetQuestions);
+router.post("/sessions/reset-questions", authorizeRoles(2, 3), resetQuestions);
 router.get("/sessions", authorizeRoles(2, 3), getSessions);
+router.get("/feedbacks", authorizeRoles(2, 3), getFeedbacks);
 router.post("/sessions/:id/reset-login", authorizeRoles(2, 3), resetSessionLogin);
 router.post("/sessions/:id/force-logout", authorizeRoles(2, 3), forceLogoutSession);
 router.post("/users/:id/reset-login", authorizeRoles(2, 3), resetUserLogin);
@@ -114,10 +116,10 @@ router.patch("/levels/:code", authorizeRoles(3), updateLevel);
 router.post("/problems/:id/reference-image", authorizeRoles(2, 3), imageUpload.single("image"), uploadReferenceImage);
 router.post("/problems/:id/resources", authorizeRoles(2, 3), imageUpload.array("files", 10), uploadResourceFiles);
 router.delete("/problems/:id/resources", authorizeRoles(2, 3), deleteResourceFile);
-router.get("/problems/:id/test-cases", authorizeRoles(3), getProblemTestCases);
-router.post("/problems/:id/test-cases", authorizeRoles(3), createTestCase);
-router.patch("/test-cases/:id", authorizeRoles(3), updateTestCase);
-router.delete("/test-cases/:id", authorizeRoles(3), deleteTestCase);
+router.get("/problems/:id/test-cases", authorizeRoles(2, 3), getProblemTestCases);
+router.post("/problems/:id/test-cases", authorizeRoles(2, 3), createTestCase);
+router.patch("/test-cases/:id", authorizeRoles(2, 3), updateTestCase);
+router.delete("/test-cases/:id", authorizeRoles(2, 3), deleteTestCase);
 
 // Manual Grading Routes
 router.get("/submissions/ui", authorizeRoles(2, 3), getUISubmissions);

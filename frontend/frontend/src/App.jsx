@@ -24,7 +24,13 @@ function AuthProvider({ children }) {
   const [questionCount, setQuestionCount] = useState(2);
   const [assessmentType, setAssessmentType] = useState("TEST_CASE");
   const [passThreshold, setPassThreshold] = useState(85);
-  const [sessionId, setSessionId] = useState(null);
+  const [sessionId, setSessionId] = useState(() => {
+    try {
+      return localStorage.getItem("active_session_id") || null;
+    } catch {
+      return null;
+    }
+  });
   const [finishSummary, setFinishSummary] = useState(null);
 
   const loadUser = useCallback(async () => {
@@ -35,6 +41,20 @@ function AuthProvider({ children }) {
       setDurationMinutes(data.durationMinutes);
       setQuestionCount(data.questionCount);
       setAssessmentType(data.assessmentType || "TEST_CASE");
+
+      // Check if user has an active session in progress
+      if (data.activeSession?.id) {
+        setSessionId(data.activeSession.id);
+        try {
+          localStorage.setItem("active_session_id", String(data.activeSession.id));
+        } catch {}
+      } else if (!finishSummary) {
+        try {
+          localStorage.removeItem("active_session_id");
+        } catch {}
+        setSessionId(null);
+      }
+
       return data.user;
     } catch {
       setUser(null);
@@ -42,13 +62,17 @@ function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [finishSummary]);
 
   useEffect(() => {
     loadUser();
   }, [loadUser]);
 
   const handleLogout = useCallback(async () => {
+    try {
+      localStorage.removeItem("active_session_id");
+      localStorage.removeItem("last_completed_session_id");
+    } catch {}
     await logout();
     setUser(null);
     setSessionId(null);
@@ -58,6 +82,9 @@ function AuthProvider({ children }) {
   const handleLaunch = useCallback(async () => {
     const res = await startTest();
     setSessionId(res.sessionId);
+    try {
+      localStorage.setItem("active_session_id", String(res.sessionId));
+    } catch {}
     setLevel(res.level);
     setDurationMinutes(res.durationMinutes);
     setQuestionCount(res.questionCount);
@@ -68,7 +95,13 @@ function AuthProvider({ children }) {
 
   const handleFinish = useCallback((summary) => {
     setFinishSummary(summary);
-  }, []);
+    if (summary?.sessionId || sessionId) {
+      try {
+        localStorage.setItem("last_completed_session_id", String(summary?.sessionId || sessionId));
+        localStorage.removeItem("active_session_id");
+      } catch {}
+    }
+  }, [sessionId]);
 
   const value = {
     loading, user, level, durationMinutes, questionCount,
@@ -177,12 +210,29 @@ function AdminRoute() {
 
 function TestRoute() {
   const {
-    sessionId, durationMinutes, level, assessmentType,
+    loading, sessionId, durationMinutes, level, assessmentType,
     passThreshold, handleLogout, handleFinish,
   } = useAuth();
   const navigate = useNavigate();
 
-  if (!sessionId) {
+  if (loading) {
+    return (
+      <div className="w-screen h-screen flex flex-col items-center justify-center bg-slate-50">
+        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <span className="mt-3 text-xs text-slate-500 font-medium">Loading assessment…</span>
+      </div>
+    );
+  }
+
+  const effectiveSessionId = sessionId || (() => {
+    try {
+      return localStorage.getItem("active_session_id");
+    } catch {
+      return null;
+    }
+  })();
+
+  if (!effectiveSessionId) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -204,7 +254,7 @@ function TestRoute() {
     <div className="w-screen h-screen overflow-hidden">
       {(assessmentType === "FLUTTER_UI" || assessmentType === "UI_COMPARE") ? (
         <UITestPage
-          sessionId={sessionId}
+          sessionId={effectiveSessionId}
           durationMinutes={durationMinutes}
           level={level}
           passThreshold={passThreshold}
@@ -214,7 +264,7 @@ function TestRoute() {
         />
       ) : (
         <TestPage
-          sessionId={sessionId}
+          sessionId={effectiveSessionId}
           durationMinutes={durationMinutes}
           level={level}
           onExit={onExit}
@@ -230,18 +280,24 @@ function ResultRoute() {
   const { sessionId, finishSummary, handleLogout } = useAuth();
   const navigate = useNavigate();
 
-  if (!sessionId && !finishSummary) {
-    return <Navigate to="/dashboard" replace />;
-  }
+  const effectiveSessionId = sessionId || finishSummary?.sessionId || (() => {
+    try {
+      return localStorage.getItem("last_completed_session_id");
+    } catch {
+      return null;
+    }
+  })();
 
-  async function onDone() {
-    await handleLogout();
-    navigate("/login", { replace: true });
+  function onDone() {
+    try {
+      localStorage.removeItem("last_completed_session_id");
+    } catch {}
+    navigate("/dashboard", { replace: true });
   }
 
   return (
     <TestResultPage
-      sessionId={sessionId}
+      sessionId={effectiveSessionId}
       summary={finishSummary}
       onDone={onDone}
     />
@@ -264,8 +320,9 @@ function RootRedirect() {
 }
 
 export default function App() {
+  const routerBase = import.meta.env.BASE_URL ? import.meta.env.BASE_URL.replace(/\/$/, "") : "";
   return (
-    <BrowserRouter basename="/flutter">
+    <BrowserRouter basename={routerBase || undefined}>
       <AuthProvider>
         <Routes>
           <Route path="/" element={<RootRedirect />} />

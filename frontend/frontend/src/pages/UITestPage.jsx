@@ -77,6 +77,7 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
   
+  const [submissionStatuses, setSubmissionStatuses] = useState({});
   const autoFinishPendingRef = useRef(false);
   const storageKey = sessionId ? `ui-test-${sessionId}` : null;
 
@@ -91,6 +92,7 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
 
     return (
       <iframe
+        key={url}
         src={buildPublicUrl(url)}
         title={title}
         className="w-full h-full bg-white border-0"
@@ -152,12 +154,32 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
             storedMap = {};
           }
         }
-        const mergedMap = { ...initialCodeMap, ...storedMap };
+
+        // Restore submitted code from database if available
+        const dbSubmittedCode = {};
+        if (data.submittedCode && typeof data.submittedCode === "object") {
+          Object.entries(data.submittedCode).forEach(([qId, codeVal]) => {
+            if (codeVal) {
+              dbSubmittedCode[qId] = getQuestionFileMap(codeVal);
+            }
+          });
+        }
+
+        const mergedMap = { ...initialCodeMap, ...dbSubmittedCode, ...storedMap };
         setCodeByQuestionId(mergedMap);
-        setCode(mergedMap[data.questions?.[0]?.id] ?? "");
+        const firstQ = data.questions?.[0];
+        if (firstQ) {
+          const firstMap = getQuestionFileMap(mergedMap[firstQ.id], firstQ.starter_code);
+          const firstKey = Object.keys(firstMap)[0] || "lib/main.dart";
+          setActiveFilePath(firstKey);
+          setCode(firstMap[firstKey] ?? "");
+        }
+        setSubmissionStatuses(data.submissionStatuses || {});
+        if (firstQ && data.submissionStatuses?.[firstQ.id]) {
+          setStatus(data.submissionStatuses[firstQ.id]);
+        }
         setPreviewUrl("");
         setScore(null);
-        setStatus(null);
         setExecutionRunId("");
         setExecutionRunStatus("");
       } catch (err) {
@@ -177,9 +199,11 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
   }, [sessionId]);
 
   useEffect(() => {
-    if (!storageKey) return;
-    localStorage.setItem(storageKey, JSON.stringify(codeByQuestionId));
-  }, [storageKey, codeByQuestionId]);
+    if (!storageKey || initializing) return;
+    if (Object.keys(codeByQuestionId).length > 0) {
+      localStorage.setItem(storageKey, JSON.stringify(codeByQuestionId));
+    }
+  }, [storageKey, codeByQuestionId, initializing]);
 
   useEffect(() => {
     if (!timerEndAt) return;
@@ -331,7 +355,7 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
     setError("");
     setPreviewUrl("");
     setScore(null);
-    setStatus(null);
+    setStatus(submissionStatuses[nextQuestion.id] || null);
   }
 
   async function runPreview() {
@@ -370,7 +394,9 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
         code: currentFileMap,
       });
       setScore(res.score ?? null);
-      setStatus(res.status || null);
+      const newStatus = res.status || "SUBMITTED";
+      setStatus(newStatus);
+      setSubmissionStatuses(prev => ({ ...prev, [activeQuestion.id]: newStatus }));
       setExecutionRunId(res.runId || "");
       setExecutionRunStatus(res.runId ? "RUNNING" : "");
     } catch (err) {
@@ -552,19 +578,30 @@ export default function UITestPage({ sessionId, level = "1A", durationMinutes, p
           <div className="w-full lg:w-[360px] xl:w-[420px] max-h-[350px] lg:max-h-none lg:h-full flex flex-col bg-white border-b lg:border-b-0 lg:border-r border-slate-200 shrink-0 overflow-hidden shadow-sm">
             {/* Question Tabs Bar */}
             <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto shrink-0">
-              {questions.map((question, index) => (
-                <button
-                  key={question.id}
-                  onClick={() => handleSelectQuestion(index)}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
-                    index === activeIndex
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "bg-white text-slate-600 border border-slate-200 hover:text-slate-900 hover:bg-slate-100"
-                  }`}
-                >
-                  Question {index + 1}
-                </button>
-              ))}
+              {questions.map((question, index) => {
+                const qStatus = submissionStatuses[question.id];
+                const isPassed = qStatus === "PASSED" || qStatus === "SUCCESS";
+                const isSub = !!qStatus;
+                return (
+                  <button
+                    key={question.id}
+                    onClick={() => handleSelectQuestion(index)}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 ${
+                      index === activeIndex
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-white text-slate-600 border border-slate-200 hover:text-slate-900 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span>Question {index + 1}</span>
+                    {isPassed && (
+                      <span className={`w-2 h-2 rounded-full ${index === activeIndex ? "bg-emerald-300" : "bg-emerald-500"}`} title="Passed" />
+                    )}
+                    {!isPassed && isSub && (
+                      <span className={`w-2 h-2 rounded-full ${index === activeIndex ? "bg-amber-300" : "bg-amber-500"}`} title="Submitted" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Scrollable Problem Content */}
